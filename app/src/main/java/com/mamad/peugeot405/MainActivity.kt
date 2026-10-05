@@ -11,6 +11,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -120,10 +122,7 @@ fun ControlScreen(vm: MainViewModel) {
     fun find(a: String): Cmd? = cmds.firstOrNull { it.action == a }
     val extras = cmds.filter { it.action == "NONE" }
     Column(Modifier.fillMaxSize()) {
-        CarStage(
-            vm.frontTarget, vm.rearTarget, vm.frontMs, vm.rearMs, vm.maybach,
-            Modifier.fillMaxWidth().height(210.dp)
-        )
+        CarStage({ vm.sim.dispF }, { vm.sim.dispB }, vm.sim.maybachOn)
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(16.dp),
@@ -131,13 +130,15 @@ fun ControlScreen(vm: MainViewModel) {
         ) {
             item {
                 AxleCard("جلو", "FRONT", Cyan,
-                    find("F_UP_S"), find("F_UP_F"), find("F_DN_S"), find("F_DN_F"), vm::press)
+                    find("F_UP_S"), find("F_UP_F"), find("F_DN_S"), find("F_DN_F"),
+                    vm::press, vm::press, vm::pressUp)
             }
             item {
                 AxleCard("عقب", "REAR", Violet,
-                    find("R_UP_S"), find("R_UP_F"), find("R_DN_S"), find("R_DN_F"), vm::press)
+                    find("R_UP_S"), find("R_UP_F"), find("R_DN_S"), find("R_DN_F"),
+                    vm::press, vm::press, vm::pressUp)
             }
-            item { MaybachCard(find("M_ON"), find("M_OFF"), vm.maybach, vm::press) }
+            item { MaybachCard(find("M_ON"), find("M_OFF"), vm.sim.maybachOn, vm::press) }
             if (extras.isNotEmpty()) item { ExtrasCard(extras, vm::press) }
         }
     }
@@ -172,18 +173,40 @@ fun PillButton(
     accent: Color,
     filled: Boolean,
     enabled: Boolean,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
     height: Dp = 64.dp,
+    onDown: () -> Unit = {},
+    onUp: () -> Unit = {},
+    onClick: () -> Unit = {},
     leading: @Composable () -> Unit = {}
 ) {
     val shape = RoundedCornerShape(18.dp)
+    var pressed by remember { mutableStateOf(false) }
     val fg = if (filled) Color(0xFF0B0D12) else accent
+    val down by rememberUpdatedState(onDown)
+    val up by rememberUpdatedState(onUp)
+    val click by rememberUpdatedState(onClick)
+    val bg = if (filled) accent.copy(alpha = if (pressed) 0.72f else 1f)
+             else accent.copy(alpha = if (pressed) 0.38f else 0.14f)
     Row(
-        modifier.height(height).clip(shape)
-            .background(if (filled) accent else accent.copy(alpha = 0.14f))
+        modifier.height(height).clip(shape).background(bg)
             .border(1.dp, accent.copy(alpha = 0.55f), shape)
-            .clickable(enabled = enabled, onClick = onClick)
+            .pointerInput(enabled) {
+                detectTapGestures(onPress = {
+                    if (enabled) {
+                        pressed = true
+                        down()
+                        var released = false
+                        try {
+                            released = tryAwaitRelease()
+                        } finally {
+                            pressed = false
+                            up()
+                        }
+                        if (released) click()
+                    }
+                })
+            }
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
@@ -207,15 +230,22 @@ fun Arrows(up: Boolean, count: Int, tint: Color) {
 }
 
 @Composable
-fun AxleButton(cmd: Cmd?, accent: Color, up: Boolean, fast: Boolean, onPress: (Cmd) -> Unit, modifier: Modifier) {
+fun AxleButton(
+    cmd: Cmd?, accent: Color, up: Boolean, fast: Boolean,
+    onPress: (Cmd) -> Unit, onHoldStart: (Cmd) -> Unit, onHoldEnd: () -> Unit,
+    modifier: Modifier
+) {
     val fg = if (fast) Color(0xFF0B0D12) else accent
     PillButton(
         label = cmd?.label ?: "—",
         accent = accent,
         filled = fast,
         enabled = cmd != null,
-        onClick = { cmd?.let(onPress) },
-        modifier = modifier
+        modifier = modifier,
+        // آرام: تا زمانی که دست روی دکمه است حرکت می‌کند، با رها کردن می‌ایستد
+        // سریع: همان لحظه‌ی لمس یک‌بار فرمان می‌رود
+        onDown = { cmd?.let { if (fast) onPress(it) else onHoldStart(it) } },
+        onUp = { if (!fast) onHoldEnd() }
     ) {
         Arrows(up, if (fast) 2 else 1, fg)
         Spacer(Modifier.width(6.dp))
@@ -226,17 +256,17 @@ fun AxleButton(cmd: Cmd?, accent: Color, up: Boolean, fast: Boolean, onPress: (C
 fun AxleCard(
     title: String, tag: String, accent: Color,
     upSlow: Cmd?, upFast: Cmd?, downSlow: Cmd?, downFast: Cmd?,
-    onPress: (Cmd) -> Unit
+    onPress: (Cmd) -> Unit, onHoldStart: (Cmd) -> Unit, onHoldEnd: () -> Unit
 ) {
     CardBox(accent) {
         CardTitle(title, tag, accent)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            AxleButton(upSlow, accent, true, false, onPress, Modifier.weight(1f))
-            AxleButton(upFast, accent, true, true, onPress, Modifier.weight(1f))
+            AxleButton(upSlow, accent, true, false, onPress, onHoldStart, onHoldEnd, Modifier.weight(1f))
+            AxleButton(upFast, accent, true, true, onPress, onHoldStart, onHoldEnd, Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            AxleButton(downSlow, accent, false, false, onPress, Modifier.weight(1f))
-            AxleButton(downFast, accent, false, true, onPress, Modifier.weight(1f))
+            AxleButton(downSlow, accent, false, false, onPress, onHoldStart, onHoldEnd, Modifier.weight(1f))
+            AxleButton(downFast, accent, false, true, onPress, onHoldStart, onHoldEnd, Modifier.weight(1f))
         }
     }
 }
@@ -254,14 +284,14 @@ fun MaybachCard(start: Cmd?, stop: Cmd?, active: Boolean, onPress: (Cmd) -> Unit
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             PillButton(
                 label = start?.label ?: "—", accent = Gold, filled = true, enabled = start != null,
-                onClick = { start?.let(onPress) }, modifier = Modifier.weight(1.4f)
+                modifier = Modifier.weight(1.4f), onClick = { start?.let(onPress) }
             ) {
                 Icon(Icons.Default.PlayArrow, null, tint = Color(0xFF0B0D12), modifier = Modifier.size(24.dp))
                 Spacer(Modifier.width(6.dp))
             }
             PillButton(
                 label = stop?.label ?: "—", accent = Gold, filled = false, enabled = stop != null,
-                onClick = { stop?.let(onPress) }, modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f), onClick = { stop?.let(onPress) }
             ) {
                 Icon(Icons.Default.Close, null, tint = Gold, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(6.dp))
@@ -280,7 +310,7 @@ fun ExtrasCard(extras: List<Cmd>, onPress: (Cmd) -> Unit) {
                 row.forEach { c ->
                     PillButton(
                         label = c.label, accent = accent, filled = false, enabled = true,
-                        onClick = { onPress(c) }, modifier = Modifier.weight(1f), height = 48.dp
+                        modifier = Modifier.weight(1f), height = 48.dp, onClick = { onPress(c) }
                     )
                 }
                 repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }

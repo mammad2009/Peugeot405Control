@@ -17,21 +17,20 @@ data class Cmd(
 val DEFAULT_COMMANDS = listOf(
     Cmd("f_up_s", "خیز آرام", "F", "جلو", "F_UP_S"),
     Cmd("f_dn_s", "نشست آرام", "B", "جلو", "F_DN_S"),
-    Cmd("f_up_f", "خیز سریع", "1", "جلو", "F_UP_F"),
-    Cmd("f_dn_f", "نشست سریع", "2", "جلو", "F_DN_F"),
+    Cmd("f_up_f", "خیز سریع", "2", "جلو", "F_UP_F"),
+    Cmd("f_dn_f", "نشست سریع", "1", "جلو", "F_DN_F"),
     Cmd("r_up_s", "خیز آرام", "R", "عقب", "R_UP_S"),
     Cmd("r_dn_s", "نشست آرام", "L", "عقب", "R_DN_S"),
     Cmd("r_up_f", "خیز سریع", "Z", "عقب", "R_UP_F"),
     Cmd("r_dn_f", "نشست سریع", "X", "عقب", "R_DN_F"),
     Cmd("m_on", "شروع میباخ", "M", "میباخ", "M_ON"),
     Cmd("m_off", "توقف", "N", "میباخ", "M_OFF"),
-    Cmd("c_o", "فرمان o", "o", "سایر"),
-    Cmd("c_0", "فرمان 0", "0", "سایر")
+    Cmd("stop", "رها کردن دکمه (توقف)", "0", "سیستمی", "STOP")
 )
 
 class CommandStore(context: Context) {
     private val prefs = context.getSharedPreferences("commands", Context.MODE_PRIVATE)
-    private val key = "list_v2"
+    private val key = "list_v3"
 
     fun load(): List<Cmd> {
         val raw = prefs.getString(key, null) ?: return DEFAULT_COMMANDS
