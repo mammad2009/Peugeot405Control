@@ -28,6 +28,7 @@ class BluetoothClient(context: Context) {
         }
     }
 
+    // فرمان خام و بدون newline فرستاده می‌شود تا آردوینو کاراکتر اضافه نبیند
     suspend fun send(text: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val out = socket!!.outputStream

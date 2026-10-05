@@ -5,38 +5,44 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
+// action: نقش دکمه در انیمیشن ماشین (ثابت می‌ماند حتی اگر فرمان ارسالی را عوض کنی)
 data class Cmd(
     val id: String = UUID.randomUUID().toString(),
     val label: String,
     val command: String,
-    val group: String
+    val group: String,
+    val action: String = "NONE"
 )
 
 val DEFAULT_COMMANDS = listOf(
-    Cmd("fu", "جلو بالا", "F", "تعلیق جلو"),
-    Cmd("fd", "جلو پایین", "B", "تعلیق جلو"),
-    Cmd("ru", "عقب بالا", "R", "تعلیق عقب"),
-    Cmd("rd", "عقب پایین", "L", "تعلیق عقب"),
-    Cmd("ms", "شروع میباخ", "M", "میباخ"),
-    Cmd("mx", "توقف میباخ", "N", "میباخ"),
-    Cmd("c1", "فرمان 1", "1", "سایر"),
-    Cmd("c2", "فرمان 2", "2", "سایر"),
-    Cmd("cz", "فرمان Z", "Z", "سایر"),
-    Cmd("cx", "فرمان X", "X", "سایر"),
-    Cmd("co", "فرمان o", "o", "سایر"),
-    Cmd("c0", "فرمان 0", "0", "سایر")
+    Cmd("f_up_s", "خیز آرام", "F", "جلو", "F_UP_S"),
+    Cmd("f_dn_s", "نشست آرام", "B", "جلو", "F_DN_S"),
+    Cmd("f_up_f", "خیز سریع", "1", "جلو", "F_UP_F"),
+    Cmd("f_dn_f", "نشست سریع", "2", "جلو", "F_DN_F"),
+    Cmd("r_up_s", "خیز آرام", "R", "عقب", "R_UP_S"),
+    Cmd("r_dn_s", "نشست آرام", "L", "عقب", "R_DN_S"),
+    Cmd("r_up_f", "خیز سریع", "Z", "عقب", "R_UP_F"),
+    Cmd("r_dn_f", "نشست سریع", "X", "عقب", "R_DN_F"),
+    Cmd("m_on", "شروع میباخ", "M", "میباخ", "M_ON"),
+    Cmd("m_off", "توقف", "N", "میباخ", "M_OFF"),
+    Cmd("c_o", "فرمان o", "o", "سایر"),
+    Cmd("c_0", "فرمان 0", "0", "سایر")
 )
 
 class CommandStore(context: Context) {
     private val prefs = context.getSharedPreferences("commands", Context.MODE_PRIVATE)
+    private val key = "list_v2"
 
     fun load(): List<Cmd> {
-        val raw = prefs.getString("list", null) ?: return DEFAULT_COMMANDS
+        val raw = prefs.getString(key, null) ?: return DEFAULT_COMMANDS
         return runCatching {
             val arr = JSONArray(raw)
             List(arr.length()) { i ->
                 val o = arr.getJSONObject(i)
-                Cmd(o.getString("id"), o.getString("label"), o.getString("command"), o.getString("group"))
+                Cmd(
+                    o.getString("id"), o.getString("label"), o.getString("command"),
+                    o.getString("group"), o.optString("action", "NONE")
+                )
             }
         }.getOrDefault(DEFAULT_COMMANDS)
     }
@@ -44,10 +50,13 @@ class CommandStore(context: Context) {
     fun save(list: List<Cmd>) {
         val arr = JSONArray()
         list.forEach {
-            arr.put(JSONObject().put("id", it.id).put("label", it.label).put("command", it.command).put("group", it.group))
+            arr.put(
+                JSONObject().put("id", it.id).put("label", it.label)
+                    .put("command", it.command).put("group", it.group).put("action", it.action)
+            )
         }
-        prefs.edit().putString("list", arr.toString()).apply()
+        prefs.edit().putString(key, arr.toString()).apply()
     }
 
-    fun reset() { prefs.edit().remove("list").apply() }
+    fun reset() { prefs.edit().remove(key).apply() }
 }
