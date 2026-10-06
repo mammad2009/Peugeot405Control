@@ -3,6 +3,7 @@ package com.mamad.peugeot405
 import android.annotation.SuppressLint
 import android.app.Application
 import android.bluetooth.BluetoothDevice
+import android.content.Context
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +18,7 @@ import kotlinx.coroutines.launch
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val store = CommandStore(app)
     private val bt = BluetoothClient(app)
+    private val prefs = app.getSharedPreferences("bt", Context.MODE_PRIVATE)
 
     // شبیه‌ساز کد آردوینو؛ انیمیشن ماشین از روی آن می‌آید
     val sim = SketchSim()
@@ -25,6 +27,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var devices by mutableStateOf<List<BluetoothDevice>>(emptyList()); private set
     var connected by mutableStateOf(false); private set
     var status by mutableStateOf("متصل نیست"); private set
+    var btSupported by mutableStateOf(true); private set
+    var btPermission by mutableStateOf(true); private set
+    var btEnabled by mutableStateOf(true); private set
+    var lastAddress by mutableStateOf(prefs.getString("last", "") ?: ""); private set
 
     // صف ارسال: بایت‌ها دقیقاً به ترتیب فشردن/رها کردن فرستاده می‌شوند
     private val outbox = Channel<String>(Channel.UNLIMITED)
@@ -41,15 +47,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 delay(10)
             }
         }
+        refreshDevices()
     }
 
-    fun refreshDevices() { devices = bt.pairedDevices() }
+    fun refreshDevices() {
+        btSupported = bt.isSupported
+        btPermission = bt.hasPermission()
+        btEnabled = bt.isEnabled
+        devices = bt.pairedDevices().sortedByDescending { it.address == lastAddress }
+    }
+
+    private fun friendly(e: Throwable): String {
+        val m = e.message ?: e.javaClass.simpleName
+        return when {
+            e is SecurityException -> "اجازه‌ی بلوتوث داده نشده"
+            m.contains("read failed", true) || m.contains("timeout", true) || m.contains("closed", true) ->
+                "HC-05 جواب نداد. روشن بودنش را چک کن و اینکه به گوشی دیگری وصل نباشد ($m)"
+            else -> m
+        }
+    }
 
     fun connect(d: BluetoothDevice) = viewModelScope.launch {
         status = "در حال اتصال..."
         bt.connect(d)
-            .onSuccess { connected = true; status = "متصل به ${d.name}" }
-            .onFailure { connected = false; status = "اتصال ناموفق بود" }
+            .onSuccess {
+                connected = true
+                status = "متصل به ${d.name}"
+                lastAddress = d.address
+                prefs.edit().putString("last", d.address).apply()
+            }
+            .onFailure { connected = false; status = "اتصال ناموفق: ${friendly(it)}" }
     }
 
     fun disconnect() { bt.disconnect(); connected = false; status = "متصل نیست" }
@@ -75,7 +102,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         else -> c.command.firstOrNull() ?: '\u0000'
     }
 
-    // فشردن دکمه: هم فرمان می‌فرستد، هم همان را در شبیه‌ساز اجرا می‌کند (حتی بدون اتصال)
+    // فشردن یک دکمه: هم فرمان می‌فرستد، هم همان را در شبیه‌ساز اجرا می‌کند (حتی بدون اتصال)
     fun press(c: Cmd) {
         send(c.command)
         sim.receive(canon(c))

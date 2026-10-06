@@ -2,20 +2,29 @@ package com.mamad.peugeot405
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -24,7 +33,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
@@ -33,27 +51,58 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+private val Grey = Color(0xFF8B93A5)
+private val BuiltInGroups = setOf("جلو", "عقب", "میباخ")
+
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
     private val permLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { vm.refreshDevices() }
+    private val enableLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { vm.refreshDevices() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= 31) permLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+        requestBtPermission()
         setContent {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 MaterialTheme(colorScheme = darkColorScheme(primary = Cyan, background = Bg, surface = Panel)) {
-                    AppRoot(vm)
+                    AppRoot(vm, this@MainActivity::requestBtPermission, this@MainActivity::enableBluetooth, this@MainActivity::openAppSettings)
                 }
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        vm.refreshDevices()
+    }
+
+    private fun requestBtPermission() {
+        if (Build.VERSION.SDK_INT >= 31) permLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+    }
+
+    private fun enableBluetooth() {
+        enableLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+    }
+
+    private fun openAppSettings() {
+        startActivity(
+            Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", packageName, null)
+            )
+        )
+    }
 }
 
-@SuppressLint("MissingPermission")
 @Composable
-fun AppRoot(vm: MainViewModel) {
+fun AppRoot(
+    vm: MainViewModel,
+    onRequestPermission: () -> Unit,
+    onEnableBluetooth: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
     var tab by remember { mutableIntStateOf(0) }
     var showConnect by remember { mutableStateOf(false) }
     Scaffold(
@@ -74,23 +123,59 @@ fun AppRoot(vm: MainViewModel) {
         }
     }
     if (showConnect) {
-        AlertDialog(
-            onDismissRequest = { showConnect = false },
-            confirmButton = { TextButton(onClick = { showConnect = false }) { Text("بستن") } },
-            dismissButton = {
-                if (vm.connected) TextButton(onClick = { vm.disconnect(); showConnect = false }) { Text("قطع اتصال") }
-            },
-            title = { Text("دستگاه‌های جفت‌شده") },
-            text = {
-                if (vm.devices.isEmpty()) Text("دستگاهی پیدا نشد. اول HC-05 را از تنظیمات بلوتوث گوشی جفت کن (رمز معمولاً 1234 یا 0000).")
-                else LazyColumn {
-                    items(vm.devices) { d ->
-                        TextButton(onClick = { vm.connect(d); showConnect = false }) { Text("${d.name}  (${d.address})") }
+        ConnectDialog(vm, { showConnect = false }, onRequestPermission, onEnableBluetooth, onOpenSettings)
+    }
+}
+
+@SuppressLint("MissingPermission")
+@Composable
+fun ConnectDialog(
+    vm: MainViewModel,
+    onDismiss: () -> Unit,
+    onRequestPermission: () -> Unit,
+    onEnableBluetooth: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("بستن") } },
+        dismissButton = {
+            if (vm.connected) TextButton(onClick = { vm.disconnect(); onDismiss() }) { Text("قطع اتصال") }
+        },
+        title = { Text("اتصال به HC-05") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when {
+                    !vm.btSupported -> Text("این گوشی بلوتوث ندارد.")
+                    !vm.btPermission -> {
+                        Text("برنامه اجازه‌ی «دستگاه‌های نزدیک» (بلوتوث) را ندارد.")
+                        Button(onClick = onRequestPermission) { Text("دادن اجازه") }
+                        TextButton(onClick = onOpenSettings) { Text("باز کردن تنظیمات برنامه") }
+                    }
+                    !vm.btEnabled -> {
+                        Text("بلوتوث گوشی خاموش است.")
+                        Button(onClick = onEnableBluetooth) { Text("روشن کردن بلوتوث") }
+                    }
+                    vm.devices.isEmpty() ->
+                        Text("دستگاه جفت‌شده‌ای نیست. اول از تنظیمات بلوتوث گوشی، HC-05 را جفت کن (رمز 1234 یا 0000) و برگرد.")
+                    else -> {
+                        LazyColumn(Modifier.heightIn(max = 260.dp)) {
+                            items(vm.devices) { d ->
+                                TextButton(onClick = { vm.connect(d); onDismiss() }) {
+                                    Text("${d.name ?: "بدون نام"}  (${d.address})")
+                                }
+                            }
+                        }
+                        Text(
+                            "اگر وصل نشد: چراغ HC-05 باید تند چشمک بزند و به گوشی دیگری وصل نباشد.",
+                            fontSize = 11.sp, color = Grey
+                        )
                     }
                 }
+                Text(vm.status, fontSize = 11.sp, color = Grey)
             }
-        )
-    }
+        }
+    )
 }
 
 @Composable
@@ -99,7 +184,7 @@ fun Header(vm: MainViewModel, onConnect: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("پژو ۴۰۵", fontWeight = FontWeight.Black, fontSize = 24.sp, color = Color.White)
-                Text("کنترل تعلیق پنوماتیک", fontSize = 12.sp, color = Color(0xFF8B93A5))
+                Text("کنترل تعلیق پنوماتیک", fontSize = 12.sp, color = Grey)
             }
             Row(
                 Modifier.clip(RoundedCornerShape(50)).background(Panel)
@@ -120,7 +205,8 @@ fun Header(vm: MainViewModel, onConnect: () -> Unit) {
 fun ControlScreen(vm: MainViewModel) {
     val cmds = vm.commands
     fun find(a: String): Cmd? = cmds.firstOrNull { it.action == a }
-    val extras = cmds.filter { it.action == "NONE" }
+    val custom = cmds.filter { it.action == "NONE" }
+    val otherGroups = custom.filter { it.group !in BuiltInGroups }.groupBy { it.group }
     Column(Modifier.fillMaxSize()) {
         CarStage({ vm.sim.dispF }, { vm.sim.dispB }, vm.sim.maybachOn)
         LazyColumn(
@@ -129,17 +215,27 @@ fun ControlScreen(vm: MainViewModel) {
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
-                AxleCard("جلو", "FRONT", Cyan,
+                AxleCard(
+                    "جلو", "FRONT", Cyan,
                     find("F_UP_S"), find("F_UP_F"), find("F_DN_S"), find("F_DN_F"),
-                    vm::press, vm::press, vm::pressUp)
+                    custom.filter { it.group == "جلو" },
+                    { (vm.sim.dispF - 80f) / 32f },
+                    vm::press, vm::press, vm::pressUp
+                )
             }
             item {
-                AxleCard("عقب", "REAR", Violet,
+                AxleCard(
+                    "عقب", "REAR", Violet,
                     find("R_UP_S"), find("R_UP_F"), find("R_DN_S"), find("R_DN_F"),
-                    vm::press, vm::press, vm::pressUp)
+                    custom.filter { it.group == "عقب" },
+                    { (vm.sim.dispB - 84f) / 31f },
+                    vm::press, vm::press, vm::pressUp
+                )
             }
-            item { MaybachCard(find("M_ON"), find("M_OFF"), vm.sim.maybachOn, vm::press) }
-            if (extras.isNotEmpty()) item { ExtrasCard(extras, vm::press) }
+            item { MaybachCard(find("M_ON"), find("M_OFF"), vm.sim.maybachOn, custom.filter { it.group == "میباخ" }, vm::press) }
+            otherGroups.forEach { (name, list) ->
+                item(key = "group_$name") { GroupCard(name, list, vm::press) }
+            }
         }
     }
 }
@@ -164,6 +260,20 @@ fun CardTitle(title: String, tag: String, accent: Color) {
         Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
         Spacer(Modifier.weight(1f))
         Text(tag, fontSize = 11.sp, color = accent.copy(alpha = 0.7f))
+    }
+}
+
+// نوار باریک که ارتفاع فعلی محور را نشان می‌دهد (فقط دوباره‌کشی می‌شود، نه ترکیب مجدد)
+@Composable
+fun Gauge(value: () -> Float, accent: Color) {
+    Canvas(Modifier.fillMaxWidth().height(6.dp)) {
+        val r = CornerRadius(size.height / 2f)
+        drawRoundRect(accent.copy(alpha = 0.15f), size = size, cornerRadius = r)
+        val w = size.width * value().coerceIn(0f, 1f)
+        if (w > 0f) {
+            val x0 = if (layoutDirection == LayoutDirection.Rtl) size.width - w else 0f
+            drawRoundRect(accent, topLeft = Offset(x0, 0f), size = Size(w, size.height), cornerRadius = r)
+        }
     }
 }
 
@@ -216,39 +326,120 @@ fun PillButton(
     }
 }
 
+// ---------- دکمه‌های اسپرت تعلیق: متوازی‌الاضلاع با فلش ----------
+
+private val SlantShape = GenericShape { size, _ ->
+    val k = size.height * 0.28f
+    moveTo(k, 0f)
+    lineTo(size.width, 0f)
+    lineTo(size.width - k, size.height)
+    lineTo(0f, size.height)
+    close()
+}
+
 @Composable
-fun Arrows(up: Boolean, count: Int, tint: Color) {
-    val icon = if (up) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown
-    Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
-        if (count == 2) {
-            Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp).offset(y = (-5).dp))
-            Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp).offset(y = 5.dp))
-        } else {
-            Icon(icon, null, tint = tint, modifier = Modifier.size(24.dp))
+fun Chevrons(up: Boolean, count: Int, tint: Color) {
+    Canvas(Modifier.size(30.dp, 30.dp)) {
+        val w = size.width
+        val h = size.height
+        val gap = 9.dp.toPx()
+        val dy = 5.dp.toPx()
+        val startY = h / 2f - gap * (count - 1) / 2f
+        for (i in 0 until count) {
+            val cy = startY + i * gap
+            val path = Path().apply {
+                if (up) {
+                    moveTo(w * 0.18f, cy + dy); lineTo(w * 0.5f, cy - dy); lineTo(w * 0.82f, cy + dy)
+                } else {
+                    moveTo(w * 0.18f, cy - dy); lineTo(w * 0.5f, cy + dy); lineTo(w * 0.82f, cy - dy)
+                }
+            }
+            drawPath(path, tint, style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
     }
 }
 
 @Composable
-fun AxleButton(
+fun SportButton(
+    label: String,
+    accent: Color,
+    up: Boolean,
+    fast: Boolean,
+    enabled: Boolean,
+    onDown: () -> Unit,
+    onUp: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var pressed by remember { mutableStateOf(false) }
+    val down by rememberUpdatedState(onDown)
+    val upCb by rememberUpdatedState(onUp)
+    val scale by animateFloatAsState(if (pressed) 0.96f else 1f, tween(80), label = "press")
+    val fg = if (fast) Color(0xFF0B0D12) else accent
+    val fill = if (fast) {
+        Brush.horizontalGradient(listOf(accent.copy(alpha = if (pressed) 0.85f else 1f), accent.copy(alpha = if (pressed) 0.6f else 0.72f)))
+    } else {
+        Brush.horizontalGradient(
+            listOf(accent.copy(alpha = if (pressed) 0.42f else 0.16f), accent.copy(alpha = if (pressed) 0.28f else 0.05f))
+        )
+    }
+    Row(
+        modifier.height(66.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(SlantShape).background(fill)
+            .border(1.2.dp, accent.copy(alpha = if (pressed) 1f else 0.6f), SlantShape)
+            .pointerInput(enabled) {
+                detectTapGestures(onPress = {
+                    if (enabled) {
+                        pressed = true
+                        down()
+                        try {
+                            tryAwaitRelease()
+                        } finally {
+                            pressed = false
+                            upCb()
+                        }
+                    }
+                })
+            }
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Chevrons(up, if (fast) 2 else 1, fg)
+        Spacer(Modifier.width(6.dp))
+        Text(label, color = fg, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+    }
+}
+
+@Composable
+fun AxleSport(
     cmd: Cmd?, accent: Color, up: Boolean, fast: Boolean,
     onPress: (Cmd) -> Unit, onHoldStart: (Cmd) -> Unit, onHoldEnd: () -> Unit,
     modifier: Modifier
 ) {
-    val fg = if (fast) Color(0xFF0B0D12) else accent
-    PillButton(
+    SportButton(
         label = cmd?.label ?: "—",
-        accent = accent,
-        filled = fast,
-        enabled = cmd != null,
-        modifier = modifier,
+        accent = accent, up = up, fast = fast, enabled = cmd != null,
         // آرام: تا زمانی که دست روی دکمه است حرکت می‌کند، با رها کردن می‌ایستد
         // سریع: همان لحظه‌ی لمس یک‌بار فرمان می‌رود
         onDown = { cmd?.let { if (fast) onPress(it) else onHoldStart(it) } },
-        onUp = { if (!fast) onHoldEnd() }
-    ) {
-        Arrows(up, if (fast) 2 else 1, fg)
-        Spacer(Modifier.width(6.dp))
+        onUp = { if (!fast) onHoldEnd() },
+        modifier = modifier
+    )
+}
+
+@Composable
+fun ExtraButtons(extras: List<Cmd>, accent: Color, onPress: (Cmd) -> Unit) {
+    extras.chunked(3).forEach { row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            row.forEach { c ->
+                PillButton(
+                    label = c.label, accent = accent, filled = false, enabled = true,
+                    modifier = Modifier.weight(1f), height = 46.dp, onClick = { onPress(c) }
+                )
+            }
+            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+        }
     }
 }
 
@@ -256,23 +447,26 @@ fun AxleButton(
 fun AxleCard(
     title: String, tag: String, accent: Color,
     upSlow: Cmd?, upFast: Cmd?, downSlow: Cmd?, downFast: Cmd?,
+    extras: List<Cmd>, gauge: () -> Float,
     onPress: (Cmd) -> Unit, onHoldStart: (Cmd) -> Unit, onHoldEnd: () -> Unit
 ) {
     CardBox(accent) {
         CardTitle(title, tag, accent)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            AxleButton(upSlow, accent, true, false, onPress, onHoldStart, onHoldEnd, Modifier.weight(1f))
-            AxleButton(upFast, accent, true, true, onPress, onHoldStart, onHoldEnd, Modifier.weight(1f))
+        Gauge(gauge, accent)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            AxleSport(upSlow, accent, true, false, onPress, onHoldStart, onHoldEnd, Modifier.weight(1f))
+            AxleSport(upFast, accent, true, true, onPress, onHoldStart, onHoldEnd, Modifier.weight(1f))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            AxleButton(downSlow, accent, false, false, onPress, onHoldStart, onHoldEnd, Modifier.weight(1f))
-            AxleButton(downFast, accent, false, true, onPress, onHoldStart, onHoldEnd, Modifier.weight(1f))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            AxleSport(downSlow, accent, false, false, onPress, onHoldStart, onHoldEnd, Modifier.weight(1f))
+            AxleSport(downFast, accent, false, true, onPress, onHoldStart, onHoldEnd, Modifier.weight(1f))
         }
+        ExtraButtons(extras, accent, onPress)
     }
 }
 
 @Composable
-fun MaybachCard(start: Cmd?, stop: Cmd?, active: Boolean, onPress: (Cmd) -> Unit) {
+fun MaybachCard(start: Cmd?, stop: Cmd?, active: Boolean, extras: List<Cmd>, onPress: (Cmd) -> Unit) {
     CardBox(Gold, active) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(width = 4.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(Gold))
@@ -297,25 +491,17 @@ fun MaybachCard(start: Cmd?, stop: Cmd?, active: Boolean, onPress: (Cmd) -> Unit
                 Spacer(Modifier.width(6.dp))
             }
         }
+        ExtraButtons(extras, Gold, onPress)
     }
 }
 
+// هر گروه دلخواه یک کارت جدا با اسم خودش
 @Composable
-fun ExtrasCard(extras: List<Cmd>, onPress: (Cmd) -> Unit) {
-    val accent = Color(0xFF8B93A5)
+fun GroupCard(name: String, list: List<Cmd>, onPress: (Cmd) -> Unit) {
+    val accent = Color(0xFF7DD3C0)
     CardBox(accent) {
-        CardTitle("فرمان‌های دیگر", "EXTRA", accent)
-        extras.chunked(3).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { c ->
-                    PillButton(
-                        label = c.label, accent = accent, filled = false, enabled = true,
-                        modifier = Modifier.weight(1f), height = 48.dp, onClick = { onPress(c) }
-                    )
-                }
-                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
+        CardTitle(name, "CUSTOM", accent)
+        ExtraButtons(list, accent, onPress)
     }
 }
 
@@ -345,7 +531,7 @@ fun SettingsScreen(vm: MainViewModel) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("${c.group} • ${c.label}")
-                        Text("فرمان ارسالی: ${c.command}", fontSize = 11.sp, color = Color(0xFF8B93A5))
+                        Text("فرمان ارسالی: ${c.command}", fontSize = 11.sp, color = Grey)
                     }
                     IconButton(onClick = { editing = c }) { Icon(Icons.Default.Edit, null) }
                     if (c.action == "NONE") {
@@ -359,6 +545,8 @@ fun SettingsScreen(vm: MainViewModel) {
         var label by remember(cmd.id) { mutableStateOf(cmd.label) }
         var command by remember(cmd.id) { mutableStateOf(cmd.command) }
         var group by remember(cmd.id) { mutableStateOf(cmd.group) }
+        val groups = (listOf("جلو", "عقب", "میباخ", "سایر") + vm.commands.map { it.group })
+            .filter { it != "سیستمی" }.distinct()
         AlertDialog(
             onDismissRequest = { editing = null },
             title = { Text("ویرایش فرمان") },
@@ -367,7 +555,18 @@ fun SettingsScreen(vm: MainViewModel) {
                     OutlinedTextField(label, { label = it }, label = { Text("نام دکمه") }, singleLine = true)
                     OutlinedTextField(command, { command = it }, label = { Text("فرمان ارسالی") }, singleLine = true)
                     if (cmd.action == "NONE") {
-                        OutlinedTextField(group, { group = it }, label = { Text("گروه") }, singleLine = true)
+                        OutlinedTextField(group, { group = it }, label = { Text("اسم گروه (جدید بنویس یا انتخاب کن)") }, singleLine = true)
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            groups.forEach { g ->
+                                Text(
+                                    g, fontSize = 12.sp,
+                                    modifier = Modifier.clip(RoundedCornerShape(50))
+                                        .background(if (group.trim() == g) Cyan.copy(alpha = 0.3f) else Color(0xFF222B3A))
+                                        .clickable { group = g }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
                     }
                 }
             },
