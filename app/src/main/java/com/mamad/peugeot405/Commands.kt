@@ -25,6 +25,13 @@ val DEFAULT_COMMANDS = listOf(
     Cmd("r_dn_f", "نشست سریع", "X", "عقب", "R_DN_F"),
     Cmd("m_on", "شروع میباخ", "M", "میباخ", "M_ON"),
     Cmd("m_off", "توقف", "N", "میباخ", "M_OFF"),
+    // هر دو محور همزمان (دو بایت پشت سر هم؛ آردوینو هر دور حلقه یک بایت می‌خواند)
+    Cmd("both_up", "هر دو بالا", "2Z", "هر دو", "BOTH_UP"),
+    Cmd("both_dn", "هر دو پایین", "1X", "هر دو", "BOTH_DN"),
+    Cmd("factory", "ارتفاع فابریک", "1X", "هر دو", "FACTORY"),
+    // ریموت پژو
+    Cmd("lock", "قفل", "K", "ریموت", "LOCK"),
+    Cmd("unlock", "باز", "U", "ریموت", "UNLOCK"),
     Cmd("stop", "رها کردن دکمه (توقف)", "0", "سیستمی", "STOP")
 )
 
@@ -34,7 +41,7 @@ class CommandStore(context: Context) {
 
     fun load(): List<Cmd> {
         val raw = prefs.getString(key, null) ?: return DEFAULT_COMMANDS
-        return runCatching {
+        val saved = runCatching {
             val arr = JSONArray(raw)
             List(arr.length()) { i ->
                 val o = arr.getJSONObject(i)
@@ -43,7 +50,10 @@ class CommandStore(context: Context) {
                     o.getString("group"), o.optString("action", "NONE")
                 )
             }
-        }.getOrDefault(DEFAULT_COMMANDS)
+        }.getOrNull() ?: return DEFAULT_COMMANDS
+        // فرمان‌های جدیدِ پیش‌فرض (هر دو، فابریک، ریموت) به لیست ذخیره‌شده‌ی قبلی اضافه می‌شوند
+        val have = saved.map { it.id }.toSet()
+        return saved + DEFAULT_COMMANDS.filter { it.id !in have }
     }
 
     fun save(list: List<Cmd>) {

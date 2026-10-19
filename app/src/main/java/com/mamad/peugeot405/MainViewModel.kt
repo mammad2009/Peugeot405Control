@@ -26,6 +26,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var commands by mutableStateOf(store.load()); private set
     var devices by mutableStateOf<List<BluetoothDevice>>(emptyList()); private set
     var connected by mutableStateOf(false); private set
+    var connecting by mutableStateOf(false); private set
+    // وضعیت قفل ماکت از روی آخرین دکمه‌ی ریموت (null = هنوز چیزی نفرستاده‌ایم)
+    var locked by mutableStateOf<Boolean?>(null); private set
     var status by mutableStateOf("متصل نیست"); private set
     var btSupported by mutableStateOf(true); private set
     var btPermission by mutableStateOf(true); private set
@@ -68,15 +71,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun connect(d: BluetoothDevice) = viewModelScope.launch {
+        if (connecting) return@launch
+        connecting = true
         status = "در حال اتصال..."
         bt.connect(d)
             .onSuccess {
                 connected = true
+                locked = null
                 status = "متصل به ${d.name}"
                 lastAddress = d.address
                 prefs.edit().putString("last", d.address).apply()
             }
             .onFailure { connected = false; status = "اتصال ناموفق: ${friendly(it)}" }
+        connecting = false
+    }
+
+    // اتصال سریع به آخرین دستگاه (یا تنها دستگاه جفت‌شده). اگر نشد false برمی‌گرداند تا لیست نمایش داده شود
+    fun connectQuick(): Boolean {
+        refreshDevices()
+        if (!btSupported || !btPermission || !btEnabled) return false
+        val d = devices.firstOrNull { it.address == lastAddress } ?: devices.singleOrNull() ?: return false
+        connect(d)
+        return true
     }
 
     fun disconnect() { bt.disconnect(); connected = false; status = "متصل نیست" }
@@ -113,6 +129,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val stop = commands.firstOrNull { it.action == "STOP" }
         send(stop?.command ?: "0")
         sim.receive('0')
+    }
+
+    private fun cmdFor(action: String): Cmd? = commands.firstOrNull { it.action == action }
+
+    // فرمان‌های چندبایتی (مثل «هر دو بالا»: هر بایت جدا و با فاصله‌ی کوتاه فرستاده می‌شود)
+    fun pressMulti(c: Cmd) {
+        viewModelScope.launch {
+            for (ch in c.command) {
+                send(ch.toString())
+                sim.receive(ch)
+                delay(40)
+            }
+        }
+    }
+
+    // ارتفاع فابریک = وضعیت استراحتِ سرووها (جلو 80، عقب 84). اگر میباخ روشن است با فرمان توقفش برمی‌گردد
+    fun factory(c: Cmd) {
+        if (sim.maybachOn) cmdFor("M_OFF")?.let { press(it) } else pressMulti(c)
+    }
+
+    // ریموت پژو
+    fun remoteLock() {
+        send(cmdFor("LOCK")?.command ?: "K")
+        if (connected) locked = true
+    }
+
+    fun remoteUnlock() {
+        send(cmdFor("UNLOCK")?.command ?: "U")
+        if (connected) locked = false
     }
 
     fun upsert(c: Cmd) {
