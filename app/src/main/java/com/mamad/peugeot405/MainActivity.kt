@@ -11,6 +11,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -105,25 +110,108 @@ fun AppRoot(
 ) {
     var tab by remember { mutableIntStateOf(0) }
     var showConnect by remember { mutableStateOf(false) }
-    Scaffold(
-        containerColor = Bg,
-        contentColor = Color.White,
-        bottomBar = {
-            NavigationBar(containerColor = Panel) {
-                NavigationBarItem(selected = tab == 0, onClick = { tab = 0 },
-                    icon = { Icon(Icons.Default.Home, null) }, label = { Text("کنترل") })
-                NavigationBarItem(selected = tab == 1, onClick = { tab = 1 },
-                    icon = { Icon(Icons.Default.Settings, null) }, label = { Text("فرمان‌ها") })
+    var showRemote by remember { mutableStateOf(false) }
+
+    // قبل از اتصال فقط یک CTA مرکزی؛ پس از اتصال، ریموت به‌صورت مرحله‌ای نمایش داده می‌شود.
+    LaunchedEffect(vm.connected) {
+        if (vm.connected) showRemote = true
+        else { showRemote = false; tab = 0 }
+    }
+
+    if (!vm.connected) {
+        Box(Modifier.fillMaxSize().background(
+            Brush.radialGradient(listOf(Color(0xFF17243A), Bg), radius = 900f)
+        ), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                Box(Modifier.size(112.dp).clip(CircleShape).background(Panel)
+                    .border(1.dp, Cyan.copy(alpha = .7f), CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Bluetooth, null, tint = Cyan, modifier = Modifier.size(48.dp))
+                }
+                Text("PEUGEOT 405", fontSize = 25.sp, fontWeight = FontWeight.Black, color = Color.White)
+                Text("AIR SUSPENSION CONTROL", fontSize = 11.sp, color = Grey, letterSpacing = 2.sp)
+                Button(onClick = { vm.refreshDevices(); showConnect = true },
+                    shape = RoundedCornerShape(22.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Cyan),
+                    modifier = Modifier.padding(top = 14.dp).height(58.dp).fillMaxWidth(.72f)) {
+                    Icon(Icons.Default.BluetoothSearching, null)
+                    Spacer(Modifier.width(10.dp))
+                    Text("اتصال به ماژول", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+                Text(vm.status, color = Grey, fontSize = 12.sp)
             }
         }
-    ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize()) {
-            Header(vm) { vm.refreshDevices(); showConnect = true }
-            if (tab == 0) ControlScreen(vm) else SettingsScreen(vm)
+    } else if (showRemote) {
+        RemoteScreen(
+            onLock = { vm.send("K") },
+            onUnlock = { vm.send("U"); showRemote = false; tab = 0 },
+            onClose = { showRemote = false }
+        )
+    } else {
+        Scaffold(
+            containerColor = Bg,
+            contentColor = Color.White,
+            bottomBar = {
+                NavigationBar(containerColor = Panel) {
+                    NavigationBarItem(selected = tab == 0, onClick = { tab = 0 },
+                        icon = { Icon(Icons.Default.Home, null) }, label = { Text("کنترل") })
+                    NavigationBarItem(selected = tab == 1, onClick = { tab = 1 },
+                        icon = { Icon(Icons.Default.Settings, null) }, label = { Text("فرمان‌ها") })
+                    NavigationBarItem(selected = false, onClick = { showRemote = true },
+                        icon = { Icon(Icons.Default.VpnKey, null) }, label = { Text("ریموت") })
+                }
+            }
+        ) { pad ->
+            Column(Modifier.padding(pad).fillMaxSize()) {
+                Header(vm) { vm.refreshDevices(); showConnect = true }
+                if (tab == 0) ControlScreen(vm) else SettingsScreen(vm)
+            }
         }
     }
     if (showConnect) {
         ConnectDialog(vm, { showConnect = false }, onRequestPermission, onEnableBluetooth, onOpenSettings)
+    }
+}
+
+@Composable
+fun RemoteScreen(onLock: () -> Unit, onUnlock: () -> Unit, onClose: () -> Unit) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF1B2940), Bg), radius = 850f)),
+        contentAlignment = Alignment.Center) {
+        AnimatedVisibility(visible, enter = fadeIn(tween(450)) + scaleIn(initialScale = .72f, animationSpec = tween(650)),
+            exit = fadeOut(tween(250)) + scaleOut(targetScale = .8f, animationSpec = tween(250))) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                Text("PEUGEOT 405", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                Text("ریموت هوشمند", color = Grey, fontSize = 13.sp)
+                Column(Modifier.width(210.dp).clip(RoundedCornerShape(38.dp))
+                    .background(Brush.verticalGradient(listOf(Color(0xFF303643), Color(0xFF11151D))))
+                    .border(1.dp, Color(0xFF687080), RoundedCornerShape(38.dp)).padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    Box(Modifier.size(48.dp).clip(CircleShape).background(Color(0xFF080B11))
+                        .border(1.dp, Color(0xFF858D9C), CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.DirectionsCar, null, tint = Cyan, modifier = Modifier.size(27.dp))
+                    }
+                    Button(onClick = onLock, modifier = Modifier.fillMaxWidth().height(76.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF202938)),
+                        shape = RoundedCornerShape(18.dp)) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Lock, null, modifier = Modifier.size(25.dp))
+                            Text("قفل", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Button(onClick = onUnlock, modifier = Modifier.fillMaxWidth().height(76.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF153B36)),
+                        shape = RoundedCornerShape(18.dp)) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.LockOpen, null, modifier = Modifier.size(25.dp))
+                            Text("باز کردن و ورود", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                Text("Bluetooth • ${"CONNECTED"}", color = Color(0xFF4ADE80), fontSize = 11.sp)
+                TextButton(onClick = onClose) { Text("رفتن به کنترل‌ها", color = Grey) }
+            }
+        }
     }
 }
 
@@ -214,6 +302,44 @@ fun ControlScreen(vm: MainViewModel) {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = {
+                        vm.send("2")
+                        vm.send("Z")
+                        vm.sim.receive('2'); vm.sim.receive('Z')
+                    }, modifier = Modifier.weight(1f).height(64.dp),
+                        shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF183A3B))) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.VerticalAlignTop, null)
+                            Text("بالا بردن هر دو محور", fontSize = 12.sp)
+                        }
+                    }
+                    Button(onClick = {
+                        vm.send("1")
+                        vm.send("X")
+                        vm.sim.receive('1'); vm.sim.receive('X')
+                    }, modifier = Modifier.weight(1f).height(64.dp),
+                        shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF332B4D))) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.VerticalAlignBottom, null)
+                            Text("پایین آوردن هر دو محور", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            item {
+                OutlinedButton(onClick = {
+                    vm.send("1")
+                    vm.send("X")
+                    vm.sim.receive('1'); vm.sim.receive('X')
+                }, modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4ADE80))) {
+                    Icon(Icons.Default.RestartAlt, null, tint = Color(0xFF4ADE80))
+                    Spacer(Modifier.width(8.dp))
+                    Text("بازگشت به ارتفاع فابریک", color = Color(0xFF4ADE80), fontWeight = FontWeight.Bold)
+                }
+            }
             item {
                 AxleCard(
                     "جلو", "FRONT", Cyan,
