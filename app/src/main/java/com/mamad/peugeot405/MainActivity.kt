@@ -11,7 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -88,7 +88,7 @@ class MainActivity : ComponentActivity() {
 }
 
 
-// مراحل ورود: 0 = انیمیشن شروع (MINI GARAGE MAMMAD و لوگوی پژو) ، 1 = دکمه‌ی اتصال ، 2 = ریموت پژو ، 3 = منوی اصلی
+// مراحل ورود: 0 = دکمه‌ی اتصال ، 1 = ریموت پژو ، 2 = منوی اصلی
 @Composable
 fun AppRoot(
     vm: MainViewModel,
@@ -96,50 +96,42 @@ fun AppRoot(
     onEnableBluetooth: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    var phase by rememberSaveable { mutableStateOf(if (vm.connected) 3 else 0) }
+    var phase by rememberSaveable { mutableStateOf(if (vm.connected) 2 else 0) }
+    // انیمیشن شروع برنامه: MINI GARAGE MAMMAD ، بعد لوگوی پژو و 405 (مثل صفحه‌ی OLED)
+    var intro by rememberSaveable { mutableStateOf(!vm.connected) }
     var tab by remember { mutableIntStateOf(0) }
     var showConnect by remember { mutableStateOf(false) }
     var showRemote by remember { mutableStateOf(false) }
     var transition by remember { mutableStateOf(false) }
 
     // بعد از اتصال موفق: دکمه محو می‌شود و بعدش ریموت ظاهر می‌شود
-    LaunchedEffect(vm.connected, phase) {
-        if (vm.connected && phase == 1) {
+    LaunchedEffect(vm.connected) {
+        if (vm.connected && phase == 0) {
             delay(1050)
-            if (phase == 1) phase = 2
+            if (phase == 0) phase = 1
         }
     }
 
     Box(Modifier.fillMaxSize().background(Bg)) {
-        if (phase == 3 || transition) {
+        if (phase == 2 || transition) {
             MenuLayer(
                 vm, tab, { tab = it },
                 { vm.refreshDevices(); showConnect = true },
                 { showRemote = true }
             )
         }
-        if (phase == 0) {
-            SplashScreen(onDone = { phase = if (vm.connected) 3 else 1 })
+        if (phase == 0 && !intro) {
+            ConnectScreen(vm, onPick = { vm.refreshDevices(); showConnect = true }, onSkip = { phase = 2 })
         }
         if (phase == 1) {
-            ConnectScreen(vm, onPick = { vm.refreshDevices(); showConnect = true }, onSkip = { phase = 3 })
-        }
-        if (phase == 2) {
-            RemoteIntro(vm, onLeaving = { transition = true }, onDone = { phase = 3; transition = false })
+            RemoteIntro(vm, onLeaving = { transition = true }, onDone = { phase = 2; transition = false })
         }
         RemoteOverlay(vm, showRemote) { showRemote = false }
+        if (intro) IntroSplash { intro = false }
     }
     if (showConnect) {
         ConnectDialog(vm, { showConnect = false }, onRequestPermission, onEnableBluetooth, onOpenSettings)
     }
-}
-
-// محو شدن نرم موقع عوض شدن تب
-@Composable
-fun FadeIn(content: @Composable () -> Unit) {
-    val a = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { a.animateTo(1f, tween(350)) }
-    Box(Modifier.fillMaxSize().graphicsLayer { alpha = a.value }) { content() }
 }
 
 @Composable
@@ -153,12 +145,14 @@ fun MenuLayer(
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
     val a by animateFloatAsState(if (shown) 1f else 0f, tween(700), label = "menuIn")
+    Box(Modifier.fillMaxSize()) {
+    AmbientBackground()
     Scaffold(
         modifier = Modifier.graphicsLayer { alpha = a },
-        containerColor = Bg,
+        containerColor = Color.Transparent,
         contentColor = Color.White,
         bottomBar = {
-            NavigationBar(containerColor = Panel) {
+            NavigationBar(containerColor = Color(0xCC090B10)) {
                 val colors = NavigationBarItemDefaults.colors(
                     indicatorColor = Color(0xFF1A2230),
                     selectedIconColor = Cyan, selectedTextColor = Cyan,
@@ -173,12 +167,11 @@ fun MenuLayer(
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Header(vm, onConnect, onRemote)
-            key(tab) {
-                FadeIn {
-                    if (tab == 0) ControlScreen(vm) else SettingsScreen(vm)
-                }
+            Crossfade(targetState = tab, modifier = Modifier.weight(1f).fillMaxWidth(), animationSpec = tween(350), label = "tab") { t ->
+                if (t == 0) ControlScreen(vm) else SettingsScreen(vm)
             }
         }
+    }
     }
 }
 

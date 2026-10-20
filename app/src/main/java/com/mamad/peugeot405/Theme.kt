@@ -2,8 +2,8 @@ package com.mamad.peugeot405
 
 import androidx.compose.ui.graphics.Color
 
-val Bg = Color(0xFF060709)
-val Panel = Color(0xFF101318)
+val Bg = Color(0xFF05060A)
+val Panel = Color(0xFF0E1117)
 val Silver = Color(0xFFE6E9F0)
 val Steel = Color(0xFF8B93A5)
 val Cyan = Color(0xFF4FC3F7)

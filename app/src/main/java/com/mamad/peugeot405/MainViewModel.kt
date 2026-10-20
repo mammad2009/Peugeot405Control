@@ -11,7 +11,6 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -30,9 +29,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var connecting by mutableStateOf(false); private set
     // وضعیت قفل ماکت از روی آخرین دکمه‌ی ریموت (null = هنوز چیزی نفرستاده‌ایم)
     var locked by mutableStateOf<Boolean?>(null); private set
-    // بعد از U آردوینو حدود ۹ ثانیه انیمیشن باز شدن را نشان می‌دهد
-    var unlocking by mutableStateOf(false); private set
-    private var unlockJob: Job? = null
     var status by mutableStateOf("متصل نیست"); private set
     var btSupported by mutableStateOf(true); private set
     var btPermission by mutableStateOf(true); private set
@@ -82,7 +78,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .onSuccess {
                 connected = true
                 locked = null
-                unlocking = false
                 status = "متصل به ${d.name}"
                 lastAddress = d.address
                 prefs.edit().putString("last", d.address).apply()
@@ -117,11 +112,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         "F_DN_F" -> '1'
         "R_UP_F" -> 'Z'
         "R_DN_F" -> 'X'
+        "BOTH_UP" -> 'W'
+        "BOTH_DN" -> 'D'
         "M_ON" -> 'M'
         "M_OFF" -> 'N'
         "STOP" -> '0'
-        "BOTH_UP" -> 'W'
-        "BOTH_DN" -> 'D'
         else -> c.command.firstOrNull() ?: '\u0000'
     }
 
@@ -131,7 +126,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         sim.receive(canon(c))
     }
 
-    // رها کردن دکمه‌ی حرکت آرام: فرمان توقف (در کد آردوینو هر کاراکتر دیگری حرکت را متوقف می‌کند)
+    // رها کردن دکمه‌ی حرکت آرام (جلو/عقب/هر دو): فرمان توقف (در کد آردوینو هر کاراکتر دیگری حرکت را متوقف می‌کند)
     fun pressUp() {
         val stop = commands.firstOrNull { it.action == "STOP" }
         send(stop?.command ?: "0")
@@ -159,24 +154,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ریموت پژو
     fun remoteLock() {
         send(cmdFor("LOCK")?.command ?: "K")
-        if (connected) {
-            locked = true
-            unlockJob?.cancel()
-            unlocking = false
-        }
+        if (connected) locked = true
     }
 
     fun remoteUnlock() {
         send(cmdFor("UNLOCK")?.command ?: "U")
-        if (connected) {
-            locked = false
-            unlocking = true
-            unlockJob?.cancel()
-            unlockJob = viewModelScope.launch {
-                delay(9000)
-                unlocking = false
-            }
-        }
+        if (connected) locked = false
     }
 
     fun upsert(c: Cmd) {

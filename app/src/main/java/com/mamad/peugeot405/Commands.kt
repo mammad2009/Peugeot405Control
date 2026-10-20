@@ -25,10 +25,9 @@ val DEFAULT_COMMANDS = listOf(
     Cmd("r_dn_f", "نشست سریع", "X", "عقب", "R_DN_F"),
     Cmd("m_on", "شروع میباخ", "M", "میباخ", "M_ON"),
     Cmd("m_off", "توقف", "N", "میباخ", "M_OFF"),
-    // هر دو محور همزمان و آرام (تا وقتی دست روی دکمه است): W بالا ، D پایین
+    // هر دو محور همزمان و آرام (مثل جلو/عقب تا وقتی دست روی دکمه است حرکت می‌کند): W بالا ، D پایین
     Cmd("both_up", "هر دو بالا", "W", "هر دو", "BOTH_UP"),
     Cmd("both_dn", "هر دو پایین", "D", "هر دو", "BOTH_DN"),
-    // فابریک: هر دو سروو یک‌باره به حالت استراحت (جلو 80 با «1» ، عقب 84 با «X»)
     Cmd("factory", "ارتفاع فابریک", "1X", "هر دو", "FACTORY"),
     // ریموت پژو
     Cmd("lock", "قفل", "K", "ریموت", "LOCK"),
@@ -52,17 +51,17 @@ class CommandStore(context: Context) {
                 )
             }
         }.getOrNull() ?: return DEFAULT_COMMANDS
-        // فرمان‌های جدیدِ پیش‌فرض (هر دو، فابریک، ریموت) به لیست ذخیره‌شده‌ی قبلی اضافه می‌شوند
-        // فرمان‌های قدیمیِ «هر دو» (۲Z و ۱X) به W و D تبدیل می‌شوند
-        val fixed = saved.map {
+        // مهاجرت: «هر دو بالا/پایین» قبلاً 2Z و 1X بود؛ حالا W و D (اگر کاربر دستی عوضش نکرده)
+        val migrated = saved.map {
             when {
                 it.id == "both_up" && it.command == "2Z" -> it.copy(command = "W")
                 it.id == "both_dn" && it.command == "1X" -> it.copy(command = "D")
                 else -> it
             }
         }
-        val have = fixed.map { it.id }.toSet()
-        return fixed + DEFAULT_COMMANDS.filter { it.id !in have }
+        // فرمان‌های جدیدِ پیش‌فرض (هر دو، فابریک، ریموت) به لیست ذخیره‌شده‌ی قبلی اضافه می‌شوند
+        val have = migrated.map { it.id }.toSet()
+        return migrated + DEFAULT_COMMANDS.filter { it.id !in have }
     }
 
     fun save(list: List<Cmd>) {
