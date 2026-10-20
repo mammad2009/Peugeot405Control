@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -29,6 +30,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var connecting by mutableStateOf(false); private set
     // وضعیت قفل ماکت از روی آخرین دکمه‌ی ریموت (null = هنوز چیزی نفرستاده‌ایم)
     var locked by mutableStateOf<Boolean?>(null); private set
+    // بعد از U آردوینو حدود ۹ ثانیه انیمیشن باز شدن را نشان می‌دهد
+    var unlocking by mutableStateOf(false); private set
+    private var unlockJob: Job? = null
     var status by mutableStateOf("متصل نیست"); private set
     var btSupported by mutableStateOf(true); private set
     var btPermission by mutableStateOf(true); private set
@@ -78,6 +82,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .onSuccess {
                 connected = true
                 locked = null
+                unlocking = false
                 status = "متصل به ${d.name}"
                 lastAddress = d.address
                 prefs.edit().putString("last", d.address).apply()
@@ -115,6 +120,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         "M_ON" -> 'M'
         "M_OFF" -> 'N'
         "STOP" -> '0'
+        "BOTH_UP" -> 'W'
+        "BOTH_DN" -> 'D'
         else -> c.command.firstOrNull() ?: '\u0000'
     }
 
@@ -152,12 +159,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ریموت پژو
     fun remoteLock() {
         send(cmdFor("LOCK")?.command ?: "K")
-        if (connected) locked = true
+        if (connected) {
+            locked = true
+            unlockJob?.cancel()
+            unlocking = false
+        }
     }
 
     fun remoteUnlock() {
         send(cmdFor("UNLOCK")?.command ?: "U")
-        if (connected) locked = false
+        if (connected) {
+            locked = false
+            unlocking = true
+            unlockJob?.cancel()
+            unlockJob = viewModelScope.launch {
+                delay(9000)
+                unlocking = false
+            }
+        }
     }
 
     fun upsert(c: Cmd) {
