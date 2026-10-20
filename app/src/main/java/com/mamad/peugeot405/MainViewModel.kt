@@ -114,8 +114,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         "R_DN_F" -> 'X'
         "M_ON" -> 'M'
         "M_OFF" -> 'N'
-        "BOTH_UP" -> 'W'
-        "BOTH_DN" -> 'D'
         "STOP" -> '0'
         else -> c.command.firstOrNull() ?: '\u0000'
     }
