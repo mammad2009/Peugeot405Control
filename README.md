@@ -19,3 +19,22 @@
 | جلو / عقب / میباخ | مثل قبل (`F B 2 1 R L Z X M N 0`) |
 
 همه‌ی فرمان‌ها از تب «فرمان‌ها» داخل برنامه قابل ویرایش هستند.
+
+
+## Build-log diagnosis and fix
+
+The supplied GitHub Actions log fails during Kotlin compilation because the shared color
+constants (`Bg`, `Panel`, `Silver`, `Steel`, `Cyan`, `Violet`, `Gold`) are declared more
+than once in the GitHub revision (notably in `Theme.kt` and `CarStage.kt`). Kotlin then
+reports conflicting declarations and many follow-on "overload resolution ambiguity" /
+`Color.copy` errors.
+
+In this package, the palette is centralized in `Theme.kt` and removed from `CarStage.kt`,
+so these names have one declaration in this standalone project.
+
+Important: the uploaded source ZIP and the Actions log are not the same revision. The log
+also references `Intro.kt` and `Splash.kt`, which are not present in the uploaded ZIP.
+If those files are still in your GitHub repository, there may be additional errors in
+those files (the log specifically mentions `Intro.kt` uses of `maxWidth`). This ZIP fixes
+the duplicate palette declarations in the supplied project, but does not claim to fix
+source files that were not included in the ZIP.
