@@ -147,8 +147,8 @@ fun Header(vm: MainViewModel, onConnect: () -> Unit, onRemote: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("AIR CONTROL", fontWeight = FontWeight.Black, fontSize = 22.sp, letterSpacing = 1.5.sp, color = Color.White)
-                Text("کنترل هوشمند تعلیق", fontSize = 12.sp, color = Steel)
+                Text("پژو ۴۰۵", fontWeight = FontWeight.Black, fontSize = 24.sp, color = Color.White)
+                Text("کنترل تعلیق پنوماتیک", fontSize = 12.sp, color = Steel)
             }
             // دکمه‌ی ریموت: ریموت دوباره از اینجا باز می‌شود
             val tint = when (vm.locked) {
@@ -193,14 +193,12 @@ fun ControlScreen(vm: MainViewModel) {
     val pctF by remember { derivedStateOf { (((vm.sim.dispF - 80f) / 32f) * 100f).roundToInt().coerceIn(0, 100) } }
     val pctB by remember { derivedStateOf { (((vm.sim.dispB - 84f) / 31f) * 100f).roundToInt().coerceIn(0, 100) } }
     Column(Modifier.fillMaxSize()) {
+        CarStage({ vm.sim.dispF }, { vm.sim.dispB }, vm.sim.maybachOn)
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            item(key = "control_overview") {
-                ControlOverviewCard(vm, pctF, pctB)
-            }
             item {
                 // چیدمان راست به چپ: جلو (سمت راست مثل ماشین)، عقب، و ستون «هر دو» سمت چپ
                 Row(
@@ -232,77 +230,6 @@ fun ControlScreen(vm: MainViewModel) {
             groups.forEach { (name, list) ->
                 item(key = "group_$name") { GroupCard(name, list, vm::press) }
             }
-        }
-    }
-}
-
-// ---------- کارت وضعیت مدرن؛ بدون تصویر خودرو ----------
-
-@Composable
-private fun ControlOverviewCard(vm: MainViewModel, frontPercent: Int, rearPercent: Int) {
-    val pulse by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (vm.connected) 1f else 0.35f,
-        animationSpec = tween(650),
-        label = "connectionPulse"
-    )
-    val frontLevel by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = frontPercent / 100f, animationSpec = tween(420), label = "frontLevel"
-    )
-    val rearLevel by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = rearPercent / 100f, animationSpec = tween(420), label = "rearLevel"
-    )
-    val shape = RoundedCornerShape(26.dp)
-    Row(
-        Modifier.fillMaxWidth()
-            .clip(shape)
-            .background(Brush.horizontalGradient(listOf(Color(0xFF121C2A), Color(0xFF0B0D13), Color(0xFF171326))))
-            .border(1.dp, Cyan.copy(alpha = 0.30f), shape)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Box(Modifier.size(54.dp).clip(RoundedCornerShape(18.dp))
-            .background(Brush.linearGradient(listOf(Cyan.copy(alpha = 0.25f), Violet.copy(alpha = 0.18f)))),
-            contentAlignment = Alignment.Center
-        ) {
-            Canvas(Modifier.fillMaxSize().padding(7.dp)) {
-                val cx = size.width / 2f
-                val cy = size.height / 2f
-                drawCircle(Cyan.copy(alpha = 0.18f + 0.25f * pulse), size.minDimension * 0.43f, Offset(cx, cy))
-                drawCircle(Cyan.copy(alpha = 0.95f), size.minDimension * 0.28f, Offset(cx, cy), style = Stroke(2.dp.toPx()))
-                drawLine(Color.White.copy(alpha = 0.9f), Offset(cx, cy - size.height * 0.22f), Offset(cx, cy + size.height * 0.22f), 2.dp.toPx(), StrokeCap.Round)
-                drawLine(Color.White.copy(alpha = 0.9f), Offset(cx - size.width * 0.22f, cy), Offset(cx + size.width * 0.22f, cy), 2.dp.toPx(), StrokeCap.Round)
-            }
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("SUSPENSION SYSTEM", color = Color.White, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.sp)
-                Spacer(Modifier.weight(1f))
-                Box(Modifier.size(7.dp).clip(CircleShape).background(
-                    (if (vm.connected) Color(0xFF4ADE80) else Color(0xFFFF6B7A)).copy(alpha = pulse)
-                ))
-            }
-            Text(if (vm.connected) "اتصال بلوتوث فعال" else "آماده‌ی کنترل • بلوتوث متصل نیست",
-                color = Steel, fontSize = 11.sp, maxLines = 1)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MiniLevel("جلو", frontLevel, Cyan, frontPercent, Modifier.weight(1f))
-                MiniLevel("عقب", rearLevel, Violet, rearPercent, Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-@Composable
-private fun MiniLevel(label: String, level: Float, accent: Color, percent: Int, modifier: Modifier = Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, color = Steel, fontSize = 10.sp)
-            Spacer(Modifier.weight(1f))
-            Text("$percent%", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-        }
-        Box(Modifier.fillMaxWidth().height(5.dp).clip(CircleShape).background(accent.copy(alpha = 0.15f))) {
-            Box(Modifier.fillMaxWidth(level.coerceIn(0f, 1f)).fillMaxHeight().clip(CircleShape)
-                .background(Brush.horizontalGradient(listOf(accent.copy(alpha = 0.55f), accent))))
         }
     }
 }
