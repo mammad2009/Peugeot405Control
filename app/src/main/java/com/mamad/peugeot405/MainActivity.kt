@@ -11,10 +11,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -32,6 +32,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -96,13 +98,19 @@ fun AppRoot(
     onEnableBluetooth: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    var phase by rememberSaveable { mutableStateOf(if (vm.connected) 2 else 0) }
-    // انیمیشن شروع برنامه: MINI GARAGE MAMMAD ، بعد لوگوی پژو و 405 (مثل صفحه‌ی OLED)
-    var intro by rememberSaveable { mutableStateOf(!vm.connected) }
+    var phase by rememberSaveable { mutableStateOf(if (vm.connected) 2 else 3) }
     var tab by remember { mutableIntStateOf(0) }
     var showConnect by remember { mutableStateOf(false) }
     var showRemote by remember { mutableStateOf(false) }
     var transition by remember { mutableStateOf(false) }
+
+    // شروع انیمیشنی برند برنامه؛ سپس صفحه اتصال نمایش داده می‌شود.
+    LaunchedEffect(Unit) {
+        if (!vm.connected && phase == 3) {
+            delay(2700)
+            if (phase == 3) phase = 0
+        }
+    }
 
     // بعد از اتصال موفق: دکمه محو می‌شود و بعدش ریموت ظاهر می‌شود
     LaunchedEffect(vm.connected) {
@@ -120,17 +128,58 @@ fun AppRoot(
                 { showRemote = true }
             )
         }
-        if (phase == 0 && !intro) {
+        if (phase == 3) {
+            BrandSplash()
+        }
+        if (phase == 0) {
             ConnectScreen(vm, onPick = { vm.refreshDevices(); showConnect = true }, onSkip = { phase = 2 })
         }
         if (phase == 1) {
             RemoteIntro(vm, onLeaving = { transition = true }, onDone = { phase = 2; transition = false })
         }
         RemoteOverlay(vm, showRemote) { showRemote = false }
-        if (intro) IntroSplash { intro = false }
     }
     if (showConnect) {
         ConnectDialog(vm, { showConnect = false }, onRequestPermission, onEnableBluetooth, onOpenSettings)
+    }
+}
+
+@Composable
+private fun BrandSplash() {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(800), label = "brandFade")
+    val scale by animateFloatAsState(if (visible) 1f else 0.72f, tween(900), label = "brandScale")
+    Box(
+        Modifier.fillMaxSize().background(
+            androidx.compose.ui.graphics.Brush.verticalGradient(
+                listOf(Color(0xFF111C2B), Bg, Color(0xFF07090D))
+            )
+        ), contentAlignment = Alignment.Center
+    ) {
+        Column(
+            Modifier.graphicsLayer { this.alpha = alpha; scaleX = scale; scaleY = scale },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "MINI GARAGE", color = Cyan, fontSize = 15.sp,
+                letterSpacing = 6.sp, fontWeight = FontWeight.Bold
+            )
+            Text(
+                "MAMMAD", color = Color.White, fontSize = 34.sp,
+                letterSpacing = 5.sp, fontWeight = FontWeight.Black
+            )
+            Spacer(Modifier.height(18.dp))
+            Image(
+                painter = painterResource(R.drawable.peugeot_lion), contentDescription = "لوگوی پژو",
+                modifier = Modifier.size(104.dp), contentScale = ContentScale.Fit
+            )
+            Text("PEUGEOT", color = Silver, fontSize = 13.sp, letterSpacing = 8.sp, fontWeight = FontWeight.Medium)
+            Text("405", color = Color.White, fontSize = 54.sp, letterSpacing = 8.sp, fontWeight = FontWeight.Black)
+            Text("PNEUMATIC CONTROL", color = Steel, fontSize = 10.sp, letterSpacing = 3.sp)
+        }
+        Text("MADE FOR THE MINI GARAGE", Modifier.align(Alignment.BottomCenter).padding(bottom = 34.dp), color = Grey, fontSize = 9.sp, letterSpacing = 2.sp)
     }
 }
 
@@ -145,14 +194,12 @@ fun MenuLayer(
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
     val a by animateFloatAsState(if (shown) 1f else 0f, tween(700), label = "menuIn")
-    Box(Modifier.fillMaxSize()) {
-    AmbientBackground()
     Scaffold(
         modifier = Modifier.graphicsLayer { alpha = a },
-        containerColor = Color.Transparent,
+        containerColor = Bg,
         contentColor = Color.White,
         bottomBar = {
-            NavigationBar(containerColor = Color(0xCC090B10)) {
+            NavigationBar(containerColor = Panel) {
                 val colors = NavigationBarItemDefaults.colors(
                     indicatorColor = Color(0xFF1A2230),
                     selectedIconColor = Cyan, selectedTextColor = Cyan,
@@ -167,11 +214,8 @@ fun MenuLayer(
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Header(vm, onConnect, onRemote)
-            Crossfade(targetState = tab, modifier = Modifier.weight(1f).fillMaxWidth(), animationSpec = tween(350), label = "tab") { t ->
-                if (t == 0) ControlScreen(vm) else SettingsScreen(vm)
-            }
+            if (tab == 0) ControlScreen(vm) else SettingsScreen(vm)
         }
-    }
     }
 }
 

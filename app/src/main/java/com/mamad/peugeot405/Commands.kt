@@ -25,7 +25,7 @@ val DEFAULT_COMMANDS = listOf(
     Cmd("r_dn_f", "نشست سریع", "X", "عقب", "R_DN_F"),
     Cmd("m_on", "شروع میباخ", "M", "میباخ", "M_ON"),
     Cmd("m_off", "توقف", "N", "میباخ", "M_OFF"),
-    // هر دو محور همزمان و آرام (مثل جلو/عقب تا وقتی دست روی دکمه است حرکت می‌کند): W بالا ، D پایین
+    // هر دو محور همزمان (دو بایت پشت سر هم؛ آردوینو هر دور حلقه یک بایت می‌خواند)
     Cmd("both_up", "هر دو بالا", "W", "هر دو", "BOTH_UP"),
     Cmd("both_dn", "هر دو پایین", "D", "هر دو", "BOTH_DN"),
     Cmd("factory", "ارتفاع فابریک", "1X", "هر دو", "FACTORY"),
@@ -51,17 +51,9 @@ class CommandStore(context: Context) {
                 )
             }
         }.getOrNull() ?: return DEFAULT_COMMANDS
-        // مهاجرت: «هر دو بالا/پایین» قبلاً 2Z و 1X بود؛ حالا W و D (اگر کاربر دستی عوضش نکرده)
-        val migrated = saved.map {
-            when {
-                it.id == "both_up" && it.command == "2Z" -> it.copy(command = "W")
-                it.id == "both_dn" && it.command == "1X" -> it.copy(command = "D")
-                else -> it
-            }
-        }
         // فرمان‌های جدیدِ پیش‌فرض (هر دو، فابریک، ریموت) به لیست ذخیره‌شده‌ی قبلی اضافه می‌شوند
-        val have = migrated.map { it.id }.toSet()
-        return migrated + DEFAULT_COMMANDS.filter { it.id !in have }
+        val have = saved.map { it.id }.toSet()
+        return saved + DEFAULT_COMMANDS.filter { it.id !in have }
     }
 
     fun save(list: List<Cmd>) {

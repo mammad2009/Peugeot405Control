@@ -112,10 +112,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         "F_DN_F" -> '1'
         "R_UP_F" -> 'Z'
         "R_DN_F" -> 'X'
-        "BOTH_UP" -> 'W'
-        "BOTH_DN" -> 'D'
         "M_ON" -> 'M'
         "M_OFF" -> 'N'
+        "BOTH_UP" -> 'W'
+        "BOTH_DN" -> 'D'
         "STOP" -> '0'
         else -> c.command.firstOrNull() ?: '\u0000'
     }
@@ -126,7 +126,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         sim.receive(canon(c))
     }
 
-    // رها کردن دکمه‌ی حرکت آرام (جلو/عقب/هر دو): فرمان توقف (در کد آردوینو هر کاراکتر دیگری حرکت را متوقف می‌کند)
+    // رها کردن دکمه‌ی حرکت آرام: فرمان توقف (در کد آردوینو هر کاراکتر دیگری حرکت را متوقف می‌کند)
     fun pressUp() {
         val stop = commands.firstOrNull { it.action == "STOP" }
         send(stop?.command ?: "0")
