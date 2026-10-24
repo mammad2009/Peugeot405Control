@@ -1,6 +1,5 @@
 package com.mamad.peugeot405
 
-import android.app.Application
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
@@ -12,16 +11,26 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,6 +41,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -56,8 +66,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         requestBtPermission()
         setContent {
-            AppLanguage.english = getSharedPreferences("ui", MODE_PRIVATE).getBoolean("english", false)
-            CompositionLocalProvider(LocalLayoutDirection provides if (AppLanguage.english) LayoutDirection.Ltr else LayoutDirection.Rtl) {
+            // جهت صفحه و متن‌ها با زبان انتخاب‌شده عوض می‌شود
+            val fa = vm.isFa
+            val strings = remember(fa) { Strings(fa) }
+            CompositionLocalProvider(
+                LocalLayoutDirection provides (if (fa) LayoutDirection.Rtl else LayoutDirection.Ltr),
+                LocalStrings provides strings
+            ) {
                 MaterialTheme(colorScheme = darkColorScheme(primary = Cyan, background = Bg, surface = Panel)) {
                     AppRoot(vm, this@MainActivity::requestBtPermission, this@MainActivity::enableBluetooth, this@MainActivity::openAppSettings)
                 }
@@ -89,7 +104,7 @@ class MainActivity : ComponentActivity() {
 }
 
 
-// مراحل ورود: 0 = دکمه‌ی اتصال ، 1 = ریموت پژو ، 2 = منوی اصلی
+// مراحل ورود: 0 = آرم پژو ، 1 = دکمه‌ی اتصال ، 2 = ریموت پژو ، 3 = منوی اصلی
 @Composable
 fun AppRoot(
     vm: MainViewModel,
@@ -97,7 +112,7 @@ fun AppRoot(
     onEnableBluetooth: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    var phase by rememberSaveable { mutableStateOf(if (vm.connected) 2 else 0) }
+    var phase by rememberSaveable { mutableStateOf(if (vm.connected) 3 else 0) }
     var tab by remember { mutableIntStateOf(0) }
     var showConnect by remember { mutableStateOf(false) }
     var showRemote by remember { mutableStateOf(false) }
@@ -105,25 +120,29 @@ fun AppRoot(
 
     // بعد از اتصال موفق: دکمه محو می‌شود و بعدش ریموت ظاهر می‌شود
     LaunchedEffect(vm.connected) {
-        if (vm.connected && phase == 0) {
+        if (vm.connected && phase == 1) {
             delay(1050)
-            if (phase == 0) phase = 1
+            if (phase == 1) phase = 2
         }
     }
 
     Box(Modifier.fillMaxSize().background(Bg)) {
-        if (phase == 2 || transition) {
+        if (phase == 3 || transition) {
             MenuLayer(
                 vm, tab, { tab = it },
                 { vm.refreshDevices(); showConnect = true },
-                { showRemote = true }
+                { showRemote = true },
+                { transition = false; phase = 0 }
             )
         }
-        if (phase == 0) {
-            ConnectScreen(vm, onPick = { vm.refreshDevices(); showConnect = true }, onSkip = { phase = 2 })
-        }
         if (phase == 1) {
-            RemoteIntro(vm, onLeaving = { transition = true }, onDone = { phase = 2; transition = false })
+            ConnectScreen(vm, onPick = { vm.refreshDevices(); showConnect = true }, onSkip = { phase = 3 })
+        }
+        if (phase == 2) {
+            RemoteIntro(vm, onLeaving = { transition = true }, onDone = { phase = 3; transition = false })
+        }
+        if (phase == 0) {
+            SplashScreen(onDone = { phase = if (vm.connected) 2 else 1 })
         }
         RemoteOverlay(vm, showRemote) { showRemote = false }
     }
@@ -138,32 +157,85 @@ fun MenuLayer(
     tab: Int,
     onTab: (Int) -> Unit,
     onConnect: () -> Unit,
-    onRemote: () -> Unit
+    onRemote: () -> Unit,
+    onReplayIntro: () -> Unit
 ) {
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
     val a by animateFloatAsState(if (shown) 1f else 0f, tween(700), label = "menuIn")
-    Scaffold(
-        modifier = Modifier.graphicsLayer { alpha = a },
-        containerColor = Bg,
-        contentColor = Color.White,
-        bottomBar = {
-            NavigationBar(containerColor = Panel) {
-                val colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = Color(0xFF1A2230),
-                    selectedIconColor = Cyan, selectedTextColor = Cyan,
-                    unselectedIconColor = Grey, unselectedTextColor = Grey
-                )
-                NavigationBarItem(selected = tab == 0, onClick = { onTab(0) }, colors = colors,
-                    icon = { Icon(Icons.Default.Home, null) }, label = { Text(tr("کنترل", "Control")) })
-                NavigationBarItem(selected = tab == 1, onClick = { onTab(1) }, colors = colors,
-                    icon = { Icon(Icons.Default.Settings, null) }, label = { Text(tr("فرمان‌ها", "Commands")) })
+    Box(Modifier.fillMaxSize().graphicsLayer { alpha = a }) {
+        AmbientBackground(accent = if (vm.sim.maybachOn) Gold else Cyan)
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentColor = Color.White,
+            bottomBar = { BottomNav(tab, onTab) }
+        ) { pad ->
+            Column(Modifier.padding(pad).fillMaxSize()) {
+                Header(vm, onConnect, onRemote)
+                // تعویض تب‌ها با اسلاید و محو شدن
+                AnimatedContent(
+                    targetState = tab,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    transitionSpec = {
+                        val dir = if (targetState > initialState) 1 else -1
+                        (slideInHorizontally(tween(420, easing = FastOutSlowInEasing)) { full -> full * dir / 3 } +
+                            fadeIn(tween(420))) togetherWith
+                            (slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { full -> -full * dir / 3 } +
+                                fadeOut(tween(200)))
+                    },
+                    label = "tabs"
+                ) { t ->
+                    when (t) {
+                        0 -> ControlScreen(vm)
+                        1 -> CommandsScreen(vm)
+                        else -> SettingsScreen(vm, onConnect, onRemote, onReplayIntro)
+                    }
+                }
             }
         }
-    ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize()) {
-            Header(vm, onConnect, onRemote)
-            if (tab == 0) ControlScreen(vm) else SettingsScreen(vm)
+    }
+}
+
+// ---------- نوار پایین با نشانگر لغزنده ----------
+
+@Composable
+fun BottomNav(tab: Int, onTab: (Int) -> Unit) {
+    val S = LocalStrings.current
+    val labels = listOf(S.navControl, S.navCommands, S.navSettings)
+    val icons = listOf(Icons.Default.Home, Icons.Default.Edit, Icons.Default.Settings)
+    val pos by animateFloatAsState(tab.toFloat(), spring(dampingRatio = 0.7f, stiffness = 260f), label = "navPos")
+    BoxWithConstraints(Modifier.fillMaxWidth().background(Panel)) {
+        val itemW = maxWidth / 3
+        // نور پشت آیتم انتخاب‌شده
+        Box(
+            Modifier.offset(x = itemW * pos).width(itemW).height(62.dp)
+                .background(Brush.verticalGradient(listOf(Cyan.copy(alpha = 0.14f), Color.Transparent)))
+        )
+        // خط نورانی بالای آیتم انتخاب‌شده
+        Box(Modifier.offset(x = itemW * pos).width(itemW).height(62.dp), contentAlignment = Alignment.TopCenter) {
+            Box(
+                Modifier.width(36.dp).height(3.dp).clip(RoundedCornerShape(50))
+                    .background(Brush.horizontalGradient(listOf(PeugeotBlue, Cyan)))
+            )
+        }
+        Row(Modifier.fillMaxWidth().height(62.dp)) {
+            for (i in 0..2) {
+                val sel = tab == i
+                val sc by animateFloatAsState(if (sel) 1.2f else 1f, spring(dampingRatio = 0.45f, stiffness = 400f), label = "navSc$i")
+                Column(
+                    Modifier.weight(1f).fillMaxHeight()
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onTab(i) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        icons[i], null, tint = if (sel) Cyan else Grey,
+                        modifier = Modifier.size(24.dp).graphicsLayer { scaleX = sc; scaleY = sc }
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(labels[i], fontSize = 11.sp, color = if (sel) Cyan else Grey)
+                }
+            }
         }
     }
 }
@@ -177,40 +249,37 @@ fun ConnectDialog(
     onEnableBluetooth: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
+    val S = LocalStrings.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("بستن") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(S.close) } },
         dismissButton = {
-            if (vm.connected) TextButton(onClick = { vm.disconnect(); onDismiss() }) { Text("قطع اتصال") }
+            if (vm.connected) TextButton(onClick = { vm.disconnect(); onDismiss() }) { Text(S.disconnect) }
         },
-        title = { Text("اتصال به HC-05") },
+        title = { Text(S.dlgTitle) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 when {
-                    !vm.btSupported -> Text("این گوشی بلوتوث ندارد.")
+                    !vm.btSupported -> Text(S.noBluetooth)
                     !vm.btPermission -> {
-                        Text("برنامه اجازه‌ی «دستگاه‌های نزدیک» (بلوتوث) را ندارد.")
-                        Button(onClick = onRequestPermission) { Text("دادن اجازه") }
-                        TextButton(onClick = onOpenSettings) { Text("باز کردن تنظیمات برنامه") }
+                        Text(S.noPermission)
+                        Button(onClick = onRequestPermission) { Text(S.grantPermission) }
+                        TextButton(onClick = onOpenSettings) { Text(S.openAppSettings) }
                     }
                     !vm.btEnabled -> {
-                        Text("بلوتوث گوشی خاموش است.")
-                        Button(onClick = onEnableBluetooth) { Text("روشن کردن بلوتوث") }
+                        Text(S.btOff)
+                        Button(onClick = onEnableBluetooth) { Text(S.turnOnBt) }
                     }
-                    vm.devices.isEmpty() ->
-                        Text("دستگاه جفت‌شده‌ای نیست. اول از تنظیمات بلوتوث گوشی، HC-05 را جفت کن (رمز 1234 یا 0000) و برگرد.")
+                    vm.devices.isEmpty() -> Text(S.noPaired)
                     else -> {
                         LazyColumn(Modifier.heightIn(max = 260.dp)) {
                             items(vm.devices) { d ->
                                 TextButton(onClick = { vm.connect(d); onDismiss() }) {
-                                    Text("${d.name ?: "بدون نام"}  (${d.address})")
+                                    Text("${d.name ?: S.unnamed}  (${d.address})")
                                 }
                             }
                         }
-                        Text(
-                            "اگر وصل نشد: چراغ HC-05 باید تند چشمک بزند و به گوشی دیگری وصل نباشد.",
-                            fontSize = 11.sp, color = Grey
-                        )
+                        Text(S.connectTip, fontSize = 11.sp, color = Grey)
                     }
                 }
                 Text(vm.status, fontSize = 11.sp, color = Grey)
@@ -223,7 +292,8 @@ fun ConnectDialog(
 fun CardBox(accent: Color, active: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
     val shape = RoundedCornerShape(24.dp)
     Column(
-        Modifier.fillMaxWidth().clip(shape).background(Panel)
+        Modifier.fillMaxWidth().clip(shape)
+            .background(Brush.verticalGradient(listOf(Color(0xFF131720), Panel)))
             .border(1.dp, accent.copy(alpha = if (active) 0.9f else 0.25f), shape)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -255,49 +325,29 @@ fun PillButton(
     onClick: () -> Unit = {},
     leading: @Composable () -> Unit = {}
 ) {
-    val shape = RoundedCornerShape(18.dp)
-    var pressed by remember { mutableStateOf(false) }
     val fg = if (filled) Color(0xFF0B0D12) else accent
-    val down by rememberUpdatedState(onDown)
-    val up by rememberUpdatedState(onUp)
-    val click by rememberUpdatedState(onClick)
-    val bg = if (filled) accent.copy(alpha = if (pressed) 0.72f else 1f)
-             else accent.copy(alpha = if (pressed) 0.38f else 0.14f)
-    Row(
-        modifier.height(height).clip(shape).background(bg)
-            .border(1.dp, accent.copy(alpha = 0.55f), shape)
-            .pointerInput(enabled) {
-                detectTapGestures(onPress = {
-                    if (enabled) {
-                        pressed = true
-                        down()
-                        var released = false
-                        try {
-                            released = tryAwaitRelease()
-                        } finally {
-                            pressed = false
-                            up()
-                        }
-                        if (released) click()
-                    }
-                })
-            }
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
-    ) {
-        leading()
-        Text(label, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1)
+    PressBox(
+        modifier.height(height), accent, filled = filled, enabled = enabled,
+        shape = RoundedCornerShape(18.dp),
+        onDown = onDown,
+        onUp = onUp,
+        onTap = onClick
+    ) { _ ->
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            leading()
+            Text(label, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1)
+        }
     }
 }
 
 @Composable
 fun ExtraButtons(extras: List<Cmd>, accent: Color, onPress: (Cmd) -> Unit) {
+    val S = LocalStrings.current
     extras.chunked(3).forEach { row ->
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             row.forEach { c ->
                 PillButton(
-                    label = c.label, accent = accent, filled = false, enabled = true,
+                    label = S.cmdLabel(c), accent = accent, filled = false, enabled = true,
                     modifier = Modifier.weight(1f), height = 46.dp, onClick = { onPress(c) }
                 )
             }
@@ -309,56 +359,47 @@ fun ExtraButtons(extras: List<Cmd>, accent: Color, onPress: (Cmd) -> Unit) {
 // هر گروه دلخواه یک کارت جدا با اسم خودش
 @Composable
 fun GroupCard(name: String, list: List<Cmd>, onPress: (Cmd) -> Unit) {
+    val S = LocalStrings.current
     val accent = Color(0xFF7DD3C0)
     CardBox(accent) {
-        CardTitle(name, "CUSTOM", accent)
+        CardTitle(S.group(name), "CUSTOM", accent)
         ExtraButtons(list, accent, onPress)
     }
 }
 
+// ---------- تب فرمان‌ها (ویرایش دکمه‌ها و فرمان‌ها) ----------
+
 @Composable
-fun SettingsScreen(vm: MainViewModel) {
+fun CommandsScreen(vm: MainViewModel) {
+    val S = LocalStrings.current
     var editing by remember { mutableStateOf<Cmd?>(null) }
     var raw by remember { mutableStateOf("") }
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Panel)) {
-                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column(Modifier.weight(1f)) {
-                        Text(tr("زبان برنامه", "App language"), fontWeight = FontWeight.Bold)
-                        Text(tr("فارسی / English", "English / Persian"), fontSize = 12.sp, color = Grey)
-                    }
-                    Button(onClick = {
-                        AppLanguage.english = !AppLanguage.english
-                        (vm.getApplication<Application>().getSharedPreferences("ui", android.content.Context.MODE_PRIVATE))
-                            .edit().putBoolean("english", AppLanguage.english).apply()
-                    }) { Text(if (AppLanguage.english) "فارسی" else "English") }
-                }
-            }
-        }
-        item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(raw, { raw = it }, label = { Text(tr("ارسال فرمان دلخواه", "Send custom command")) },
+                OutlinedTextField(raw, { raw = it }, label = { Text(S.customCommand) },
                     modifier = Modifier.weight(1f), singleLine = true)
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = { if (raw.isNotEmpty()) vm.send(raw) }) { Text(tr("ارسال", "Send")) }
+                Button(onClick = { if (raw.isNotEmpty()) vm.send(raw) }) { Text(S.send) }
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { editing = Cmd(label = "", command = "", group = "سایر") }) {
-                    Icon(Icons.Default.Add, null); Text(tr("فرمان جدید", "New command"))
+                    Icon(Icons.Default.Add, null); Text(S.newCommand)
                 }
-                OutlinedButton(onClick = { vm.resetDefaults() }) { Text(tr("پیش‌فرض", "Defaults")) }
+                OutlinedButton(onClick = { vm.resetDefaults() }) { Text(S.defaults) }
             }
         }
-        items(vm.commands, key = { it.id }) { c ->
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Panel)) {
+        itemsIndexed(vm.commands, key = { _, c -> c.id }) { i, c ->
+            Card(
+                Modifier.fillMaxWidth().reveal(minOf(i, 8) * 45, 24.dp),
+                colors = CardDefaults.cardColors(containerColor = Panel)
+            ) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("${c.group} • ${c.label}")
-                        Text("فرمان ارسالی: ${c.command}", fontSize = 11.sp, color = Grey)
+                        Text("${S.group(c.group)} • ${S.cmdLabel(c)}")
+                        Text("${S.sentCommand}: ${c.command}", fontSize = 11.sp, color = Grey)
                     }
                     IconButton(onClick = { editing = c }) { Icon(Icons.Default.Edit, null) }
                     if (c.action == "NONE") {
@@ -369,27 +410,28 @@ fun SettingsScreen(vm: MainViewModel) {
         }
     }
     editing?.let { cmd ->
-        var label by remember(cmd.id) { mutableStateOf(cmd.label) }
+        var label by remember(cmd.id) { mutableStateOf(S.cmdLabel(cmd)) }
         var command by remember(cmd.id) { mutableStateOf(cmd.command) }
-        var group by remember(cmd.id) { mutableStateOf(cmd.group) }
+        var group by remember(cmd.id) { mutableStateOf(S.group(cmd.group)) }
         val groups = (listOf("جلو", "عقب", "میباخ", "سایر") + vm.commands.map { it.group })
             .filter { it != "سیستمی" }.distinct()
         AlertDialog(
             onDismissRequest = { editing = null },
-            title = { Text(tr("ویرایش فرمان", "Edit command")) },
+            title = { Text(S.editCommand) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(label, { label = it }, label = { Text(tr("نام دکمه", "Button label")) }, singleLine = true)
-                    OutlinedTextField(command, { command = it }, label = { Text(tr("فرمان ارسالی", "Command to send")) }, singleLine = true)
+                    OutlinedTextField(label, { label = it }, label = { Text(S.buttonName) }, singleLine = true)
+                    OutlinedTextField(command, { command = it }, label = { Text(S.sentCommand) }, singleLine = true)
                     if (cmd.action == "NONE") {
-                        OutlinedTextField(group, { group = it }, label = { Text("اسم گروه (جدید بنویس یا انتخاب کن)") }, singleLine = true)
+                        OutlinedTextField(group, { group = it }, label = { Text(S.groupName) }, singleLine = true)
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             groups.forEach { g ->
+                                val shown = S.group(g)
                                 Text(
-                                    g, fontSize = 12.sp,
+                                    shown, fontSize = 12.sp,
                                     modifier = Modifier.clip(RoundedCornerShape(50))
-                                        .background(if (group.trim() == g) Cyan.copy(alpha = 0.3f) else Color(0xFF222B3A))
-                                        .clickable { group = g }
+                                        .background(if (group.trim() == shown) Cyan.copy(alpha = 0.3f) else Color(0xFF222B3A))
+                                        .clickable { group = shown }
                                         .padding(horizontal = 12.dp, vertical = 6.dp)
                                 )
                             }
@@ -400,12 +442,81 @@ fun SettingsScreen(vm: MainViewModel) {
             confirmButton = {
                 TextButton(onClick = {
                     if (label.isNotBlank() && command.isNotEmpty()) {
-                        vm.upsert(cmd.copy(label = label.trim(), command = command, group = group.ifBlank { "سایر" }.trim()))
+                        val newGroup = if (cmd.action == "NONE") S.groupKey(group.trim()).ifBlank { "سایر" } else cmd.group
+                        vm.upsert(cmd.copy(label = label.trim(), command = command, group = newGroup))
                         editing = null
                     }
-                }) { Text(tr("ذخیره", "Save")) }
+                }) { Text(S.save) }
             },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text(tr("لغو", "Cancel")) } }
+            dismissButton = { TextButton(onClick = { editing = null }) { Text(S.cancel) } }
         )
+    }
+}
+
+// ---------- تب تنظیمات (زبان، اتصال، صدا) ----------
+
+@Composable
+fun SettingsScreen(vm: MainViewModel, onConnect: () -> Unit, onRemote: () -> Unit, onReplayIntro: () -> Unit) {
+    val S = LocalStrings.current
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Box(Modifier.reveal(0)) {
+                CardBox(Cyan) {
+                    CardTitle(S.language, "LANGUAGE", Cyan)
+                    Text(S.languageHint, color = Grey, fontSize = 12.sp)
+                    LangToggle(vm.isFa, { vm.setLang(it) })
+                }
+            }
+        }
+        item {
+            Box(Modifier.reveal(90)) {
+                CardBox(PeugeotBlue) {
+                    CardTitle(S.connection, "BLUETOOTH", PeugeotBlue)
+                    Text(vm.status, color = Grey, fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PillButton(
+                            if (vm.connected) S.disconnect else S.headerConnect, Cyan, true, true,
+                            Modifier.weight(1f), 48.dp,
+                            onClick = { if (vm.connected) vm.disconnect() else onConnect() }
+                        )
+                        PillButton(S.showRemote, Gold, false, true, Modifier.weight(1f), 48.dp, onClick = onRemote)
+                    }
+                }
+            }
+        }
+        item {
+            Box(Modifier.reveal(180)) {
+                CardBox(Gold) {
+                    CardTitle(S.remoteSound, "SOUND", Gold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(S.remoteSound, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = vm.soundOn, onCheckedChange = { vm.setSound(it) },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = PeugeotBlue)
+                        )
+                    }
+                    PillButton(S.replayIntro, Silver, false, true, Modifier.fillMaxWidth(), 48.dp, onClick = onReplayIntro)
+                }
+            }
+        }
+        item {
+            Box(Modifier.reveal(270)) {
+                CardBox(Silver) {
+                    CardTitle(S.about, "v2.0", Silver)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LionLogo(44.dp)
+                        Spacer(Modifier.width(14.dp))
+                        Column {
+                            Text("PEUGEOT 405", color = Color.White, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                            Text(S.aboutText, color = Grey, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
     }
 }

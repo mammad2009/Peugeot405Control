@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.app.Application
 import android.bluetooth.BluetoothDevice
 import android.content.Context
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,9 +21,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val store = CommandStore(app)
     private val bt = BluetoothClient(app)
     private val prefs = app.getSharedPreferences("bt", Context.MODE_PRIVATE)
+    private val settings = app.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    // شبیه‌ساز کد آردوینو؛ انیمیشن ماشین از روی آن می‌آید
+    // شبیه‌ساز کد آردوینو؛ انیمیشن آرم از روی آن می‌آید
     val sim = SketchSim()
+
+    // زبان برنامه (فارسی یا انگلیسی) و صدای ریموت
+    var isFa by mutableStateOf(settings.getBoolean("fa", true)); private set
+    var soundOn by mutableStateOf(settings.getBoolean("sound", true)); private set
+    val strings: Strings get() = Strings(isFa)
+
+    fun setLang(fa: Boolean) {
+        isFa = fa
+        settings.edit().putBoolean("fa", fa).apply()
+    }
+
+    fun setSound(on: Boolean) {
+        soundOn = on
+        settings.edit().putBoolean("sound", on).apply()
+    }
 
     var commands by mutableStateOf(store.load()); private set
     var devices by mutableStateOf<List<BluetoothDevice>>(emptyList()); private set
@@ -29,7 +47,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var connecting by mutableStateOf(false); private set
     // وضعیت قفل ماکت از روی آخرین دکمه‌ی ریموت (null = هنوز چیزی نفرستاده‌ایم)
     var locked by mutableStateOf<Boolean?>(null); private set
-    var status by mutableStateOf("متصل نیست"); private set
+
+    // پیام وضعیت به صورت «کد» نگه داشته می‌شود تا با عوض شدن زبان، متنش هم عوض شود
+    var statusCode by mutableStateOf("idle"); private set
+    private var statusArg by mutableStateOf("")
+    val status: String get() = strings.status(statusCode, statusArg)
+    private fun setStatus(code: String, arg: String = "") {
+        statusCode = code
+        statusArg = arg
+    }
+
     var btSupported by mutableStateOf(true); private set
     var btPermission by mutableStateOf(true); private set
     var btEnabled by mutableStateOf(true); private set
@@ -41,7 +68,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             for (t in outbox) {
-                bt.send(t).onFailure { connected = false; status = "ارسال ناموفق بود، اتصال قطع شد" }
+                bt.send(t).onFailure { connected = false; setStatus("sendfail") }
             }
         }
         viewModelScope.launch {
@@ -63,9 +90,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun friendly(e: Throwable): String {
         val m = e.message ?: e.javaClass.simpleName
         return when {
-            e is SecurityException -> "اجازه‌ی بلوتوث داده نشده"
+            e is SecurityException -> strings.errPerm
             m.contains("read failed", true) || m.contains("timeout", true) || m.contains("closed", true) ->
-                "HC-05 جواب نداد. روشن بودنش را چک کن و اینکه به گوشی دیگری وصل نباشد ($m)"
+                strings.errNoResponse(m)
             else -> m
         }
     }
@@ -73,16 +100,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun connect(d: BluetoothDevice) = viewModelScope.launch {
         if (connecting) return@launch
         connecting = true
-        status = "در حال اتصال..."
+        setStatus("connecting")
         bt.connect(d)
             .onSuccess {
                 connected = true
                 locked = null
-                status = "متصل به ${d.name}"
+                setStatus("connected", d.name ?: d.address)
                 lastAddress = d.address
                 prefs.edit().putString("last", d.address).apply()
             }
-            .onFailure { connected = false; status = "اتصال ناموفق: ${friendly(it)}" }
+            .onFailure { connected = false; setStatus("failed", friendly(it)) }
         connecting = false
     }
 
@@ -95,10 +122,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
-    fun disconnect() { bt.disconnect(); connected = false; status = "متصل نیست" }
+    fun disconnect() { bt.disconnect(); connected = false; setStatus("idle") }
 
     fun send(text: String) {
-        if (!connected) { status = "اول به HC-05 وصل شو"; return }
+        if (!connected) { setStatus("needconn"); return }
         outbox.trySend(text)
     }
 
@@ -149,15 +176,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (sim.maybachOn) cmdFor("M_OFF")?.let { press(it) } else pressMulti(c)
     }
 
+    // صدای بوق ریموت ماشین: قفل = یک بوق ، باز = دو بوق
+    private fun chirp(times: Int) {
+        if (!soundOn) return
+        viewModelScope.launch {
+            val g = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 55) }.getOrNull() ?: return@launch
+            repeat(times) {
+                runCatching { g.startTone(ToneGenerator.TONE_PROP_BEEP2, 70) }
+                delay(190)
+            }
+            delay(120)
+            runCatching { g.release() }
+        }
+    }
+
     // ریموت پژو
     fun remoteLock() {
         send(cmdFor("LOCK")?.command ?: "K")
-        if (connected) locked = true
+        if (connected) {
+            locked = true
+            chirp(1)
+        }
     }
 
     fun remoteUnlock() {
         send(cmdFor("UNLOCK")?.command ?: "U")
-        if (connected) locked = false
+        if (connected) {
+            locked = false
+            chirp(2)
+        }
     }
 
     fun upsert(c: Cmd) {

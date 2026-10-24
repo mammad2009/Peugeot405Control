@@ -1,11 +1,19 @@
-# Peugeot405Control
+# Peugeot 405 Control — v2.0
 
 برنامه‌ی کنترل ماکت پنوماتیک پژو ۴۰۵ از طریق بلوتوث (HC-05).
+Bluetooth (HC-05) controller app for the pneumatic Peugeot 405 model.
 
-## مراحل برنامه
-1. **صفحه‌ی اتصال** – فقط یک دکمه‌ی اتصال به ماژول بلوتوث با انیمیشن ظاهر می‌شود. بعد از اتصال موفق، دکمه محو می‌شود.
-2. **ریموت پژو** – با انیمیشن وسط صفحه ظاهر می‌شود. بعد از زدن «باز» ریموت کوچک می‌شود و می‌رود داخل منوی برنامه.
-3. **منوی اصلی** – کنترل جلو / عقب / هر دو، میباخ، ارتفاع فابریک. ریموت را از دکمه‌ی قفل بالای صفحه دوباره باز کن.
+## چه چیزهایی جدید است / What's new
+- **صفحه‌ی شروع:** آرم شیر پژو + نوشته‌ی PEUGEOT 405 با انیمیشن (برای رد کردن، لمس کن).
+- **ریموت واقعی‌تر:** بدنه‌ی براق با لبه‌ی کروم، پلاک شیر، حلقه‌ی کلید، تیغه‌ی تاشو که با «باز» بیرون می‌آید، دکمه‌های فرورونده، موج سیگنال، چشمک چراغ‌ها و صدای بوق.
+- **دو زبان:** فارسی و English؛ از صفحه‌ی اتصال یا تب «تنظیمات» عوض می‌شود (جهت صفحه هم عوض می‌شود).
+- **عکس ماکت حذف شد:** به جای آن آرم پژو و ۴۰۵ که با تعلیق بالا و پایین می‌رود و کج می‌شود.
+- **انیمیشن در همه‌جا:** ورود فنری کارت‌ها، تعویض تب، دکمه‌های فنری با موج نوری، فلش‌های متحرک، پس‌زمینه‌ی زنده.
+- آیکن برنامه با آرم پژو.
+
+## ساخت APK با گیت‌هاب
+محتویات این پوشه را در ریشه‌ی ریپازیتوری بگذار و push کن؛ GitHub Actions خودش APK می‌سازد
+(Actions ← Build APK ← Artifacts ← Peugeot405Control-apk).
 
 ## فرمان‌هایی که به ماژول فرستاده می‌شود
 | دکمه | فرمان |
@@ -15,16 +23,6 @@
 | هر دو بالا | `2` سپس `Z` |
 | هر دو پایین | `1` سپس `X` |
 | ارتفاع فابریک | `1` سپس `X` (اگر میباخ روشن باشد `N`) |
-| جلو / عقب / میباخ | مثل قبل (`F B 2 1 R L Z X M N 0`) |
+| جلو / عقب / میباخ | `F B 2 1 R L Z X M N 0` |
 
-همه‌ی فرمان‌ها از تب «فرمان‌ها» داخل برنامه قابل ویرایش هستند.
-
-
-## PEUGEOT 405 Edition updates
-- Replaced the old layered vehicle-photo stage with an animated Peugeot lion / PEUGEOT 405 branded stage.
-- Added a Persian/English language switch in Settings and saved the choice on the device.
-- Added English labels for the primary navigation, connection status, and command editor.
-- Kept the Bluetooth control and Arduino command logic intact.
-
-### Build on GitHub
-Push this project to your GitHub repository. The included GitHub Actions workflow builds a debug APK on each push (or via **Actions → Build APK → Run workflow**). Download the `Peugeot405Control-apk` artifact from the completed workflow.
+همه‌ی فرمان‌ها از تب «فرمان‌ها» قابل ویرایش هستند.

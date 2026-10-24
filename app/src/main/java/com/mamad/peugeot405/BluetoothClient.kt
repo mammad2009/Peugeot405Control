@@ -61,7 +61,7 @@ class BluetoothClient(private val context: Context) {
                 delay(250)
             }
         }
-        Result.failure<Unit>(last ?: IllegalStateException("اتصال برقرار نشد"))
+        Result.failure<Unit>(last ?: IllegalStateException("Connection could not be established"))
     }
 
     suspend fun send(text: String): Result<Unit> = withContext(Dispatchers.IO) {

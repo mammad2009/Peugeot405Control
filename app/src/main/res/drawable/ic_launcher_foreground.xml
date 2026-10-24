@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/peugeot_lion"
+    android:insetLeft="29%"
+    android:insetTop="27%"
+    android:insetRight="29%"
+    android:insetBottom="27%" />
