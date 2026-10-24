@@ -1,5 +1,6 @@
 package com.mamad.peugeot405
 
+import android.app.Application
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
@@ -55,7 +56,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         requestBtPermission()
         setContent {
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            AppLanguage.english = getSharedPreferences("ui", MODE_PRIVATE).getBoolean("english", false)
+            CompositionLocalProvider(LocalLayoutDirection provides if (AppLanguage.english) LayoutDirection.Ltr else LayoutDirection.Rtl) {
                 MaterialTheme(colorScheme = darkColorScheme(primary = Cyan, background = Bg, surface = Panel)) {
                     AppRoot(vm, this@MainActivity::requestBtPermission, this@MainActivity::enableBluetooth, this@MainActivity::openAppSettings)
                 }
@@ -153,9 +155,9 @@ fun MenuLayer(
                     unselectedIconColor = Grey, unselectedTextColor = Grey
                 )
                 NavigationBarItem(selected = tab == 0, onClick = { onTab(0) }, colors = colors,
-                    icon = { Icon(Icons.Default.Home, null) }, label = { Text("کنترل") })
+                    icon = { Icon(Icons.Default.Home, null) }, label = { Text(tr("کنترل", "Control")) })
                 NavigationBarItem(selected = tab == 1, onClick = { onTab(1) }, colors = colors,
-                    icon = { Icon(Icons.Default.Settings, null) }, label = { Text("فرمان‌ها") })
+                    icon = { Icon(Icons.Default.Settings, null) }, label = { Text(tr("فرمان‌ها", "Commands")) })
             }
         }
     ) { pad ->
@@ -320,19 +322,35 @@ fun SettingsScreen(vm: MainViewModel) {
     var raw by remember { mutableStateOf("") }
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Panel)) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("زبان برنامه", "App language"), fontWeight = FontWeight.Bold)
+                        Text(tr("فارسی / English", "English / Persian"), fontSize = 12.sp, color = Grey)
+                    }
+                    Button(onClick = {
+                        AppLanguage.english = !AppLanguage.english
+                        (vm.getApplication<Application>().getSharedPreferences("ui", android.content.Context.MODE_PRIVATE))
+                            .edit().putBoolean("english", AppLanguage.english).apply()
+                    }) { Text(if (AppLanguage.english) "فارسی" else "English") }
+                }
+            }
+        }
+        item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(raw, { raw = it }, label = { Text("ارسال فرمان دلخواه") },
+                OutlinedTextField(raw, { raw = it }, label = { Text(tr("ارسال فرمان دلخواه", "Send custom command")) },
                     modifier = Modifier.weight(1f), singleLine = true)
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = { if (raw.isNotEmpty()) vm.send(raw) }) { Text("ارسال") }
+                Button(onClick = { if (raw.isNotEmpty()) vm.send(raw) }) { Text(tr("ارسال", "Send")) }
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { editing = Cmd(label = "", command = "", group = "سایر") }) {
-                    Icon(Icons.Default.Add, null); Text("فرمان جدید")
+                    Icon(Icons.Default.Add, null); Text(tr("فرمان جدید", "New command"))
                 }
-                OutlinedButton(onClick = { vm.resetDefaults() }) { Text("پیش‌فرض") }
+                OutlinedButton(onClick = { vm.resetDefaults() }) { Text(tr("پیش‌فرض", "Defaults")) }
             }
         }
         items(vm.commands, key = { it.id }) { c ->
@@ -358,11 +376,11 @@ fun SettingsScreen(vm: MainViewModel) {
             .filter { it != "سیستمی" }.distinct()
         AlertDialog(
             onDismissRequest = { editing = null },
-            title = { Text("ویرایش فرمان") },
+            title = { Text(tr("ویرایش فرمان", "Edit command")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(label, { label = it }, label = { Text("نام دکمه") }, singleLine = true)
-                    OutlinedTextField(command, { command = it }, label = { Text("فرمان ارسالی") }, singleLine = true)
+                    OutlinedTextField(label, { label = it }, label = { Text(tr("نام دکمه", "Button label")) }, singleLine = true)
+                    OutlinedTextField(command, { command = it }, label = { Text(tr("فرمان ارسالی", "Command to send")) }, singleLine = true)
                     if (cmd.action == "NONE") {
                         OutlinedTextField(group, { group = it }, label = { Text("اسم گروه (جدید بنویس یا انتخاب کن)") }, singleLine = true)
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -385,9 +403,9 @@ fun SettingsScreen(vm: MainViewModel) {
                         vm.upsert(cmd.copy(label = label.trim(), command = command, group = group.ifBlank { "سایر" }.trim()))
                         editing = null
                     }
-                }) { Text("ذخیره") }
+                }) { Text(tr("ذخیره", "Save")) }
             },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("لغو") } }
+            dismissButton = { TextButton(onClick = { editing = null }) { Text(tr("لغو", "Cancel")) } }
         )
     }
 }

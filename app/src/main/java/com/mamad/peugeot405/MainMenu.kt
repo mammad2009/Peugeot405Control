@@ -147,8 +147,8 @@ fun Header(vm: MainViewModel, onConnect: () -> Unit, onRemote: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("پژو ۴۰۵", fontWeight = FontWeight.Black, fontSize = 24.sp, color = Color.White)
-                Text("کنترل تعلیق پنوماتیک", fontSize = 12.sp, color = Steel)
+                Text(tr("پژو ۴۰۵", "PEUGEOT 405"), fontWeight = FontWeight.Black, fontSize = 24.sp, color = Color.White)
+                Text(tr("کنترل تعلیق پنوماتیک", "PNEUMATIC SUSPENSION CONTROL"), fontSize = 12.sp, color = Steel)
             }
             // دکمه‌ی ریموت: ریموت دوباره از اینجا باز می‌شود
             val tint = when (vm.locked) {
@@ -175,7 +175,7 @@ fun Header(vm: MainViewModel, onConnect: () -> Unit, onRemote: () -> Unit) {
             ) {
                 Box(Modifier.size(8.dp).clip(CircleShape).background(if (vm.connected) Color(0xFF4ADE80) else Color(0xFFF87171)))
                 Spacer(Modifier.width(8.dp))
-                Text(if (vm.connected) "متصل" else "اتصال", fontSize = 13.sp, color = Color.White)
+                Text(if (vm.connected) tr("متصل", "Connected") else tr("اتصال", "Connect"), fontSize = 13.sp, color = Color.White)
             }
         }
         Text(vm.status, fontSize = 11.sp, color = Color(0xFF6B7385), modifier = Modifier.padding(top = 4.dp))
